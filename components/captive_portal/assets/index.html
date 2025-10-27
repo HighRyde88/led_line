@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Настройки устройства</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Центральный лоадер -->
+    <div class="connection-tab-loader show waiting">
+      <div class="loader-inner"></div>
+      <div class="loader-text">Загрузка...</div>
+    </div>
+
+    <!-- Основной контент -->
+    <div class="container">
+      <div class="main-card">
+        <div class="header-with-settings">
+          <div class="header-content">
+            <div class="header-text">
+              <h3>Панель управления</h3>
+              <h6 id="ethernet-status">💻 - 🌐 - ❌</h6>
+            </div>
+            <div class="header-controls">
+              <button
+                type="button"
+                id="reboot-btn"
+                class="header-btn"
+                title="Перезагрузить"
+              >
+                <span class="btn-icon">🔁</span>
+                <span class="tooltip">Перезагрузить</span>
+              </button>
+              <button
+                type="button"
+                id="logout-btn"
+                class="header-btn"
+                title="Выйти"
+              >
+                <span class="btn-icon">🚪</span>
+                <span class="tooltip">Выйти</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tab active" data-tab="connection">Соединение</div>
+          <div class="tab" data-tab="settings">Настройки</div>
+          <div class="tab" data-tab="update">Обновление</div>
+        </div>
+        <div class="content-connected-tab-wrapper">
+          <!-- Вкладка "Соединение" -->
+          <div class="tab-content active" id="connection-tab">
+            <form id="wifi-form">
+              <div class="form-group">
+                <div class="scan-section">
+                  <button
+                    type="button"
+                    id="scan-btn"
+                    class="control-btn btn-secondary"
+                  >
+                    <span class="btn-text">🔍 Найти сети</span>
+                    <div class="loader" id="scan-loader">
+                      <div class="spinner"></div>
+                      <span>Поиск...</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    class="manual-ssid-btn"
+                    id="manual-ssid-btn"
+                  >
+                    ✏️
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="ssid-select">Название сети (SSID):</label>
+                <div class="input-wrapper" id="ssid-wrapper">
+                  <div class="select-wrapper">
+                    <select
+                      id="ssid-select"
+                      name="ssid"
+                      required
+                      class="settings-input"
+                    >
+                      <option value="">Выберите сеть...</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="wifi-password">Пароль:</label>
+                <div class="input-wrapper password-container">
+                  <input
+                    type="password"
+                    id="wifi-password"
+                    name="password"
+                    placeholder="Введите пароль сети"
+                    class="settings-input"
+                  />
+                  <button
+                    type="button"
+                    class="toggle-password"
+                    id="toggle-wifi-password"
+                  >
+                    👁️
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <div class="connect-section">
+                  <button
+                    type="submit"
+                    id="connect-btn"
+                    class="control-btn btn-primary connect"
+                  >
+                    <span class="btn-text" id="connect-btn-text"
+                      >🔌 Подключиться</span
+                    >
+                    <div class="loader" id="connect-loader">
+                      <div class="spinner"></div>
+                      <span>Подключение...</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </form>
+            <div class="settings-form-group connection-info">
+              <div class="input-wrapper">
+                <input
+                  type="text"
+                  id="connection-info-text"
+                  name="connection-info-text"
+                  value=""
+                  readonly
+                  class="settings-input"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Вкладка "Настройки" -->
+        <div class="tab-content" id="settings-tab">
+          <div class="accordion">
+            <!-- Блок: Устройство -->
+            <div class="accordion-item">
+              <button type="button" class="accordion-header">
+                <span>📱 Устройство</span>
+                <span class="accordion-icon"> ►</span>
+              </button>
+              <div class="accordion-body">
+                <div class="settings-form-group">
+                  <label for="hostname" class="settings-label"
+                    >Имя устройства:</label
+                  >
+                  <input
+                    type="text"
+                    id="hostname"
+                    name="hostname"
+                    class="settings-input"
+                    placeholder="Введите имя устройства"
+                  />
+                </div>
+              </div>
+            </div>
+            <!-- Блок: led strip -->
+            <div class="accordion-item">
+              <button type="button" class="accordion-header">
+                <span>💡 Настройка ленты</span>
+                <span class="accordion-icon"> ►</span>
+              </button>
+              <div class="accordion-body">
+                <div class="settings-form-group">
+                  <label for="led-count" class="settings-label"
+                    >Количество светодиодов:</label
+                  >
+                  <input
+                    type="number"
+                    id="led-count"
+                    name="led-count"
+                    class="settings-input"
+                    placeholder="Введите количество светодиодов"
+                  />
+                </div>
+                <div class="settings-form-group">
+                  <label for="next-device-hostname" class="settings-label"
+                    >Имя устройства (опционально):</label
+                  >
+                  <div class="input-wrapper">
+                    <input
+                      type="text"
+                      id="next-device-hostname"
+                      name="next-device-hostname"
+                      class="settings-input"
+                      placeholder="Введите имя следующего устройства"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Блок: Адрес устройства -->
+            <div class="accordion-item">
+              <button type="button" class="accordion-header">
+                <span>🌎 Адрес устройства</span>
+                <span class="accordion-icon">►</span>
+              </button>
+              <div class="accordion-body">
+                <div class="network-mode-buttons">
+                  <button type="button" id="dhcp-btn" class="mode-btn active">
+                    DHCP
+                  </button>
+                  <button type="button" id="static-btn" class="mode-btn">
+                    Статический IP
+                  </button>
+                </div>
+                <!-- Поля для статического IP -->
+                <div
+                  class="static-ip-fields"
+                  id="static-ip-fields"
+                  style="display: none; margin-top: 15px"
+                >
+                  <div class="settings-form-group">
+                    <label for="static-ip">IP-адрес:</label>
+                    <input
+                      type="text"
+                      id="static-ip"
+                      name="static-ip"
+                      class="settings-input"
+                      placeholder="192.168.0.1"
+                    />
+                  </div>
+                  <div class="settings-form-group">
+                    <label for="subnet-mask">Маска подсети:</label>
+                    <input
+                      type="text"
+                      id="subnet-mask"
+                      name="subnet-mask"
+                      class="settings-input"
+                      placeholder="255.255.255.0"
+                    />
+                  </div>
+                  <div class="settings-form-group">
+                    <label for="gateway">Шлюз:</label>
+                    <input
+                      type="text"
+                      id="gateway"
+                      name="gateway"
+                      class="settings-input"
+                      placeholder="192.168.1.1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Блок: Точка доступа -->
+            <div class="accordion-item">
+              <button type="button" class="accordion-header">
+                <span>🛜 Точка доступа</span>
+                <span class="accordion-icon"> ►</span>
+              </button>
+              <div class="accordion-body">
+                <div class="settings-form-group">
+                  <label for="captive-ssid" class="settings-label"
+                    >Название сети (SSID):</label
+                  >
+                  <input
+                    type="text"
+                    id="captive-ssid"
+                    name="captive-ssid"
+                    class="settings-input"
+                    placeholder="Введите SSID"
+                  />
+                </div>
+                <div class="settings-form-group">
+                  <label for="captive-password" class="settings-label"
+                    >Пароль точки доступа (опционально):</label
+                  >
+                  <div class="input-wrapper password-container">
+                    <input
+                      type="password"
+                      id="captive-password"
+                      name="captive-password"
+                      class="settings-input"
+                      placeholder="Введите пароль сети"
+                    />
+                    <button
+                      type="button"
+                      class="toggle-password"
+                      id="toggle-captive-password"
+                    >
+                      👁️
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Блок: MQTT -->
+            <div class="accordion-item">
+              <button type="button" class="accordion-header">
+                <span>🔗 MQTT</span>
+                <span class="accordion-icon">►</span>
+              </button>
+              <div class="accordion-body">
+                <div class="network-mode-buttons">
+                  <button
+                    type="button"
+                    id="mqtt-off-btn"
+                    class="mode-btn active"
+                  >
+                    Выкл
+                  </button>
+                  <button type="button" id="mqtt-on-btn" class="mode-btn">
+                    Вкл
+                  </button>
+                </div>
+                <!-- Поля MQTT (показываются, если включено) -->
+                <div id="mqtt-fields" style="display: none; margin-top: 10px">
+                  <div class="settings-form-group">
+                    <label for="mqtt-server">Сервер MQTT:</label>
+                    <input
+                      type="text"
+                      id="mqtt-server"
+                      name="mqtt-server"
+                      class="settings-input"
+                      placeholder="mqtt.example.com"
+                    />
+                  </div>
+                  <div class="settings-form-group">
+                    <label for="mqtt-port">Порт:</label>
+                    <input
+                      type="number"
+                      id="mqtt-port"
+                      name="mqtt-port"
+                      class="settings-input"
+                      placeholder="1883"
+                    />
+                  </div>
+                  <div class="settings-form-group">
+                    <label for="mqtt-user">Логин:</label>
+                    <input
+                      type="text"
+                      id="mqtt-user"
+                      name="mqtt-user"
+                      class="settings-input"
+                      placeholder="Введите логин"
+                    />
+                  </div>
+                  <div class="settings-form-group">
+                    <label for="mqtt-password">Пароль:</label>
+                    <div class="input-wrapper password-container">
+                      <input
+                        type="password"
+                        id="mqtt-password"
+                        name="mqtt-password"
+                        class="settings-input"
+                        placeholder="Введите пароль"
+                      />
+                      <button
+                        type="button"
+                        class="toggle-password"
+                        id="toggle-mqtt-password"
+                      >
+                        👁️
+                      </button>
+                    </div>
+                  </div>
+                  <div class="settings-form-group">
+                    <button
+                      type="button"
+                      id="test-mqtt-btn"
+                      class="control-btn test-mqtt-btn"
+                      style="margin-top: 16px; width: 100%"
+                      disabled
+                    >
+                      <span class="general-btn-text"
+                        >🛠️ Проверить соединение</span
+                      >
+                      <div class="general-loader" id="mqtt-test-loader">
+                        <div class="spinner"></div>
+                        <span id="mqtt-test-loader-text">Подключение...</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Кнопки и статус вне аккордеонов -->
+          <div class="settings-actions">
+            <button
+              type="button"
+              id="save-settings-btn"
+              class="control-btn save-settings-btn"
+              style="margin-top: 16px; width: 100%"
+              disabled
+            >
+              <span class="general-btn-text">💾 Сохранить настройки</span>
+              <div class="general-loader" id="general-save-loader">
+                <div class="spinner"></div>
+                <span>Сохранение...</span>
+              </div>
+            </button>
+            <div class="settings-status" id="general-settings-status"></div>
+
+            <button
+              type="button"
+              id="reset-btn"
+              class="control-btn btn-danger"
+              style="margin-top: 10px; height: 40px; width: 100%"
+            >
+              🗑️ Сбросить настройки
+            </button>
+            <div class="settings-info">
+              <p>ℹ️ Эта вкладка используется для настройки</p>
+            </div>
+          </div>
+        </div>
+        <!-- Вкладка "Обновление" -->
+        <div class="tab-content" id="update-tab">
+          <form id="update-form">
+            <div class="settings-form-group input-code">
+              <label for="firmware-code" class="settings-label"
+                >Код обновления:</label
+              >
+              <input
+                type="text"
+                id="firmware-code"
+                name="firmware-code"
+                class="settings-input"
+                placeholder="Введите код обновления"
+                disabled
+              />
+            </div>
+            <button
+              type="button"
+              id="update-firmware-btn"
+              class="control-btn save-settings-btn"
+              style="margin-top: 20px"
+              disabled
+            >
+              <span class="update-btn-text">🚀 Отправить и обновить</span>
+              <div class="general-loader" id="update-loader">
+                <div class="spinner"></div>
+                <span>Обновление...</span>
+              </div>
+            </button>
+            <div class="app-version" id="application-version">
+              Версия: 0.0.0
+            </div>
+            <div class="settings-status" id="update-status"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ядро и базовый класс -->
+    <script src="settings_core.js"></script>
+    <script src="base_module.js"></script>
+    <script src="loader.js"></script>
+
+    <!-- Модули (без регистрации) -->
+    <script src="control_module.js"></script>
+    <script src="device_module.js"></script>
+    <script src="ledstrip_module.js"></script>
+    <script src="network_module.js"></script>
+    <script src="apoint_module.js"></script>
+    <script src="mqtt_module.js"></script>
+    <script src="wifi_module.js"></script>
+    <script src="update_module.js"></script>
+
+    <!-- Регистрация модулей -->
+    <script src="modules_registry.js"></script>
+
+    <!-- Основной скрипт -->
+    <script src="script.js"></script>
+
+    <script>
+      window.addEventListener("load", function () {
+        setTimeout(() => {
+          uiLoader.hide();
+        }, 500);
+      });
+    </script>
+  </body>
+</html>
