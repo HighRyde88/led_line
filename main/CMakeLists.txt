@@ -4,6 +4,7 @@ idf_component_register(
         "ledline/ledline.c"
         "ledline/mqtt_ledline.c"
         "ledline/effects_ledline.c"
+        "ledline/effects_support.c"
 
     INCLUDE_DIRS "."
 )

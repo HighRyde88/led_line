@@ -1,33 +1,94 @@
+#include "ledline.h"
 #include "effects_ledline.h"
-
+#include "server/modules/data_parser.h"
 
 #define ITEMS_COUNT (3)
 
 static const char *TAG = "Led effects";
-
-static uint8_t split_string(const char *input, char **output_array, int array_size, char delimiter);
-
+//=================================================================
 typedef void (*topic_manager_func_t)(void *data);
 
 typedef struct
 {
-    char *topic;
-    topic_manager_func_t manager_func;
+    const char *topic;
+    const topic_manager_func_t manager_func;
 } topic_manager_t;
 
 static void state_manager(void *data);
+static void color_manager(void *data);
+static void brightness_manager(void *data);
+
 static topic_manager_t topic_manager[] = {
-    {"state", state_manager}};
+    {"state", state_manager},
+    {"color", color_manager},
+    {"brightness", brightness_manager}};
 static uint8_t topic_manager_count = sizeof(topic_manager) / sizeof(topic_manager_t);
+//=================================================================
+typedef void (*effect_manager_func_t)(void *data);
+
+typedef struct
+{
+    const char *effect;
+    const bool circular;
+    const effect_manager_func_t effect_func;
+} effect_manager_t;
+
+static void static_effect(void *data);
+
+static effect_manager_t effect_manager[] = {
+    {"static", true, static_effect}};
+static uint8_t effect_manager_count = sizeof(effect_manager) / sizeof(effect_manager_t);
+
+static effect_manager_t *store_effect = NULL;
+static effect_manager_t *current_effect = &effect_manager[0];
+
+static rgb_t current_color_rgb = {0};
 //=================================================================
 static void state_manager(void *data)
 {
-    bool temp_state = (bool*)data;
+    if (data == NULL)
+        return;
+
+    char *state = (char *)data;
+
+    if (strcmp(state, "enable") == 0)
+    {
+        current_effect = store_effect;
+        store_effect = NULL;
+    }
+    else if (strcmp(state, "enable") == 0)
+    {
+        store_effect = current_effect;
+        current_effect = NULL;
+    }
+}
+
+static void color_manager(void *data)
+{
+    if (data == NULL)
+        return;
+
+    current_effect = &effect_manager[0];
+}
+
+static void brightness_manager(void *data)
+{
+    if (data == NULL)
+        return;
+
+    char *precent_str = (char *)data;
+    uint8_t percent = atoi(precent_str);
+    //current_brightness = (uint8_t)((percent * 255.0f) / 100.0f);
 }
 //=================================================================
 void task_effects(void *pvParameters)
 {
     mqtt_data_t data_message = {0};
+
+    current_color_rgb.blue = 255;
+
+    effect_manager_t *last_effect = NULL;
+    bool effect_executed_once = false;
 
     while (1)
     {
@@ -35,19 +96,31 @@ void task_effects(void *pvParameters)
         {
             if (topic_list != NULL && topic_count > 0)
             {
-                for (uint8_t i = 0; i < topic_count; i++)
+                bool func_executed = false;
+                for (uint8_t i = 0; i < topic_count && !func_executed; i++)
                 {
                     char *items[ITEMS_COUNT] = {0};
-                    uint8_t count = split_string(topic_list[i], items, ITEMS_COUNT, '/');
+                    uint8_t count = split_string(data_message.topic, items, ITEMS_COUNT, '/');
 
                     if (count > 0 && items[count - 1] != NULL)
                     {
-                        for (uint8_t j = 0; j < topic_manager_count; j++)
+                        for (uint8_t j = 0; j < topic_manager_count && !func_executed; j++)
                         {
-                            if (strcmp(items[count - 1], topic_manager[j].topic) == 0)
+                            if (topic_manager[j].topic != NULL &&
+                                strcmp(items[count - 1], topic_manager[j].topic) == 0)
                             {
                                 topic_manager[j].manager_func(data_message.data);
-                                break;
+                                func_executed = true;
+
+                                if (current_effect != last_effect)
+                                {
+                                    last_effect = current_effect;
+                                }
+
+                                if (current_effect != NULL && !current_effect->circular)
+                                {
+                                    effect_executed_once = false;
+                                }
                             }
                         }
                     }
@@ -62,48 +135,55 @@ void task_effects(void *pvParameters)
                 }
             }
         }
+
+        // Вызов эффекта
+        if (current_effect != NULL && current_effect->effect_func != NULL)
+        {
+            if (current_effect->circular)
+            {
+                current_effect->effect_func(data_message.data);
+            }
+            else
+            {
+                if (!effect_executed_once)
+                {
+                    current_effect->effect_func(data_message.data);
+                    effect_executed_once = true;
+                }
+            }
+        }
     }
 }
 //=================================================================
-static uint8_t split_string(const char *input, char **output_array, int array_size, char delimiter)
+static void static_effect(void *data)
 {
-    if (!input || !output_array || array_size <= 0)
+    if (data == NULL)
     {
-        return 0;
+        return;
     }
 
-    int count = 0;
-    const char *start = input;
-    const char *end = input;
+    char *color_raw = (char *)data;
+    uint32_t color_hex = color_string_to_uint32(color_raw);
+    rgb_t target_color = rgb_from_code(color_hex);
 
-    while (*end && count < array_size)
+    if(!compare_rgb(&target_color, &static_color_rgb)){
+
+    }
+
+
+    for (int i = 0; i <= 5; ++i)
     {
-        if (*end == delimiter)
+        fract16 frac = (fract16)((65535 * i) / 5);
+        rgb_t result = rgb_lerp16(current_color_rgb, target_color, frac);
+
+        for (uint32_t led = 0; led < leds_num; led++)
         {
-            int len = end - start;
-            output_array[count] = malloc(len + 1);
-            if (output_array[count] != NULL)
-            {
-                strncpy(output_array[count], start, len);
-                output_array[count][len] = '\0';
-                count++;
-                start = end + 1;
-            }
+            led_strip_set_pixel(led_strip, led, result.red, result.green, result.blue);
         }
-        end++;
+        led_strip_refresh(led_strip);
+
+        vTaskDelay(5 / portTICK_PERIOD_MS);
     }
 
-    if (count < array_size && start < end)
-    {
-        int len = end - start;
-        output_array[count] = malloc(len + 1);
-        if (output_array[count] != NULL)
-        {
-            strncpy(output_array[count], start, len);
-            output_array[count][len] = '\0';
-            count++;
-        }
-    }
-
-    return count;
+    current_color_rgb = rgb_from_code(color_hex);
 }

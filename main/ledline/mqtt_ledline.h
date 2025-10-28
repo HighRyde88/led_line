@@ -11,10 +11,6 @@
 #include "nvs_settings.h"
 #include "driver/gpio.h"
 
-#define LED_STRIP_GPIO_PIN GPIO_NUM_27
-
-
-
 #ifdef __cplusplus
 extern "C"
 {

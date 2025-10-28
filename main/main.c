@@ -54,6 +54,7 @@ static esp_err_t sta_connect_attempt(void)
     }
     else
     {
+        mqtt_ledline_resources_init();
         return ESP_OK; // Уже подключены
     }
 }
@@ -67,7 +68,8 @@ void app_main(void)
     gpio_set_direction(GPIO_NUM_36, GPIO_MODE_INPUT);
     gpio_set_pull_mode(GPIO_NUM_39, GPIO_PULLUP_ONLY);
 
-    bool forced_launch = !gpio_get_level(GPIO_NUM_36);
+    //bool forced_launch = !gpio_get_level(GPIO_NUM_36);
+    bool forced_launch = false;
 
     portal_start_with_sta_attempt("Ledline_config", "", forced_launch, sta_connect_attempt);
 
