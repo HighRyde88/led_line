@@ -643,7 +643,7 @@ static void dw_sta_event_handler(void *arg, esp_event_base_t event_base, int32_t
                         ESP_LOGW(TAG, "AP not found - will retry when AP becomes available");
                         // Все равно пытаемся переподключиться через некоторое время
                         should_reconnect = true;
-                        reconnect_delay = 5000; // 5 секунд для "AP not found"
+                        reconnect_delay = 2000; // 5 секунд для "AP not found"
                         break;
                     // Таймауты - переподключаемся немедленно
                     case WIFI_REASON_HANDSHAKE_TIMEOUT:        // 204
@@ -668,14 +668,14 @@ static void dw_sta_event_handler(void *arg, esp_event_base_t event_base, int32_t
                     case WIFI_REASON_AP_TSF_RESET:            // 206
                         ESP_LOGI(TAG, "Temporary disconnection - reconnect with delay");
                         should_reconnect = true;
-                        reconnect_delay = 2000; // 2 секунды
+                        reconnect_delay = 1000; // 2 секунды
                         break;
                     // Перегрузка AP
                     case WIFI_REASON_ASSOC_TOOMANY:        // 5
                     case WIFI_REASON_NOT_ENOUGH_BANDWIDTH: // 33
                         ESP_LOGI(TAG, "AP overloaded - reconnect with exponential delay");
                         should_reconnect = true;
-                        reconnect_delay = 5000; // 5 секунд
+                        reconnect_delay = 2000; // 5 секунд
                         break;
                     // Неопределенные причины
                     case WIFI_REASON_UNSPECIFIED:                // 1
@@ -684,7 +684,7 @@ static void dw_sta_event_handler(void *arg, esp_event_base_t event_base, int32_t
                     default:
                         ESP_LOGW(TAG, "Unexpected disconnect reason %d - reconnect with delay", disconn->reason);
                         should_reconnect = true;
-                        reconnect_delay = 3000; // 3 секунды по умолчанию
+                        reconnect_delay = 2000; // 3 секунды по умолчанию
                         break;
                     }
                     // Выполняем переподключение если нужно
@@ -1273,4 +1273,37 @@ void dw_station_set_auto_reconnect(bool enable)
     {
         ESP_LOGE(TAG, "Failed to acquire WiFi mutex to set auto-reconnect state");
     }
+}
+//=================================================================
+esp_err_t dw_check_wifi_connection_status(void)
+{
+    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (!sta_netif)
+    {
+        ESP_LOGE(TAG, "STA netif not found or not initialized");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    wifi_ap_record_t ap_info;
+    esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
+    if (err != ESP_OK)
+    {
+        if (err == ESP_ERR_INVALID_STATE) {
+             ESP_LOGW(TAG, "Wi-Fi STA is not connected to an AP (or interface not ready)");
+        } else {
+             ESP_LOGE(TAG, "Failed to get AP info: %s", esp_err_to_name(err));
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(sta_netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0)
+    {
+        ESP_LOGW(TAG, "No valid IP address assigned to STA netif");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "Wi-Fi STA is connected to AP '%s' and has IP address: " IPSTR,
+             ap_info.ssid, IP2STR(&ip_info.ip));
+    return ESP_OK;
 }

@@ -1,0 +1,41 @@
+#ifndef __MQTTLEDLINE_H
+#define __MQTTLEDLINE_H
+
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "led_strip.h"
+#include "esp_log.h"
+#include "esp_err.h"
+#include "mqtt.h"
+#include "nvs_settings.h"
+#include "driver/gpio.h"
+
+#define LED_STRIP_GPIO_PIN GPIO_NUM_27
+
+
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+    typedef struct
+    {
+        char *topic;
+        void *data;
+    } mqtt_data_t;
+
+    extern QueueHandle_t mqttQueue;
+
+    extern int topic_count;
+    extern char **topic_list;
+    
+    esp_err_t mqtt_ledline_resources_init(void);
+    void mqtt_ledline_resources_deinit(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

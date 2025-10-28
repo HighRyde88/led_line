@@ -2,6 +2,7 @@
 class WifiModule extends BaseSettingsModule {
   constructor() {
     super();
+    this.standaloneToggle = document.getElementById("standalone-mode-toggle");
     this.scanBtn = document.getElementById("scan-btn");
     this.connectBtn = document.getElementById("connect-btn");
     this.connectBtnText = document.getElementById("connect-btn-text");
@@ -49,6 +50,19 @@ class WifiModule extends BaseSettingsModule {
     this.connectBtn?.addEventListener("click", (e) => {
       e.preventDefault();
       this.handleConnectClick();
+    });
+    this.standaloneToggle?.addEventListener("change", (e) => {
+      this.blockUi(e.target.checked);
+      this.connectBtn.disabled = e.target.checked;
+
+      this.sendWS({
+        type: "request",
+        target: "wifi",
+        action: "save_partial",
+        data: {
+          standalone: e.target.checked.toString(),
+        },
+      });
     });
   }
 
@@ -183,12 +197,17 @@ class WifiModule extends BaseSettingsModule {
 
     disconnect_ap_success: () => {},
 
-    load_ap_config_success: (data) => {
+    load_ap_config: (data) => {
       const current = document.getElementById("ssid-select");
-      if (current && data.data.ssid && data.data.password) {
+      if (
+        current &&
+        data.data.ssid &&
+        data.data.password &&
+        data.data.standalone
+      ) {
         const input = this.createSsidInput();
-        input.value = data.data.ssid;
-        this.password.value = data.data.password;
+        input.value = data.data.ssid || "";
+        this.password.value = data.data.password || "";
 
         if (current.parentNode.classList.contains("select-wrapper")) {
           current.parentNode.replaceWith(input);
@@ -197,18 +216,33 @@ class WifiModule extends BaseSettingsModule {
         }
 
         this.manualSsidBtn.innerHTML = "✅";
+
+        const standalone = this.parseBoolean(data.data?.standalone);
+        if (this.standaloneToggle) this.standaloneToggle.checked = standalone;
+        if (this.connectBtn) this.connectBtn.disabled = standalone;
+        this.blockUi(standalone);
       }
     },
 
-    load_connection_status_success: (data) => {
+    load_connection_status: (data) => {
       const connection_status = data.data;
       this.blockUi(true);
+
+      this.blockSlandstone(true);
+      if (this.standaloneToggle) this.standaloneToggle.checked = false;
+
       if (connection_status) {
         this.updateStatus(connection_status);
 
         const { connect } = connection_status;
 
-        this.callModule("network", "setNetworkValue", connect.ip, connect.netmask, connect.gateway);
+        this.callModule(
+          "network",
+          "setNetworkValue",
+          connect.ip,
+          connect.netmask,
+          connect.gateway
+        );
 
         const text_status = connect.ethernet
           ? "Доступ в интернет есть..."
@@ -296,6 +330,7 @@ class WifiModule extends BaseSettingsModule {
 
       this.buttonConnectionRole("connect");
       this.blockUi(false);
+      this.blockSlandstone(false);
       this.updateStatus(null);
     },
   };
@@ -353,6 +388,13 @@ class WifiModule extends BaseSettingsModule {
       current.replaceWith(wrapper);
       this.manualSsidBtn.innerHTML = "✏️";
     }
+  }
+
+  parseBoolean(str) {
+    if (typeof str === "string") {
+      return str.toLowerCase() === "true";
+    }
+    return Boolean(str);
   }
 
   createSsidSelect(networks) {
@@ -485,6 +527,15 @@ class WifiModule extends BaseSettingsModule {
     this.password.disabled = state;
     this.toggle.disabled = state;
     if (ssidElement) ssidElement.disabled = state;
+  }
+
+  blockSlandstone(state) {
+    const standaloneElement = document.querySelector(".toggle-group");
+
+    this.standaloneToggle.disabled = state;
+
+    if (state) standaloneElement.classList.add("disabled");
+    else standaloneElement.classList.remove("disabled");
   }
 
   sendWS(data) {

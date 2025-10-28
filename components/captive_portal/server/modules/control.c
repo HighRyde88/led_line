@@ -22,7 +22,7 @@ static void task_reboot_system(void *pvParameters)
     vTaskDelay(500 / portTICK_PERIOD_MS);
 
     ESP_LOGI(TAG, "Stopping captive portal components...");
-    captive_portal_stop(true);
+    portal_stop(true);
 
     ESP_LOGI(TAG, "Captive portal stop complete. Restarting device...");
     vTaskDelay(2500 / portTICK_PERIOD_MS);
@@ -40,7 +40,7 @@ static void action_task(void *argument)
     {
         vTaskDelay(100 / portTICK_PERIOD_MS);
         ESP_LOGI(TAG, "Stopping captive portal components...");
-        captive_portal_stop(false);
+        portal_stop(false);
     }
     else if (strcmp(action, "reset") == 0)
     {
@@ -48,7 +48,7 @@ static void action_task(void *argument)
 
         ESP_LOGI(TAG, "Reset command received. Initiating factory reset...");
         ESP_LOGI(TAG, "Stopping captive portal components...");
-        captive_portal_stop(true);
+        portal_stop(true);
 
         ESP_LOGI(TAG, "Deleting Wi-Fi configuration from NVS...");
         dwnvs_delete_ap_config();

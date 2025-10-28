@@ -196,6 +196,18 @@ extern "C"
      */
     esp_err_t dw_set_hostname_to_netif(wifi_interface_t wifi_interface, const char *hostname);
 
+    /**
+     * @brief Проверяет, подключен ли STA интерфейс к Wi-Fi точке доступа (AP)
+     *        и имеет ли он действительный IP-адрес в локальной сети.
+     *        Эта функция не проверяет наличие интернета.
+     *
+     * @return ESP_OK, если подключены к AP и IP-адрес назначен.
+     * @return ESP_ERR_INVALID_STATE, если не подключены к AP или IP-адрес недействителен.
+     * @return ESP_ERR_INVALID_ARG, если сетевой интерфейс STA не инициализирован.
+     * @return Другой код ошибки в случае проблем с системными вызовами ESP-IDF.
+     */
+    esp_err_t dw_check_wifi_connection_status(void);
+
     // Функция для проверки состояния сканирования
     bool dw_is_scanning(void);
 

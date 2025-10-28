@@ -7,39 +7,70 @@
 #include "esp_system.h"
 #include "esp_heap_caps.h"
 
-#include "mqtt.h"
 #include "wifi.h"
+#include "dwnvs.h"
 
 #include "ledline/ledline.h"
-//================================================================
-static void heap_monitor_task(void *pvParameter)
+#include "ledline/mqtt_ledline.h"
+//=================================================================
+static void sta_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    while (1)
+    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
-        printf("\n=== Heap Information ===\n");
-        printf("Free heap: %lu bytes\n", esp_get_free_heap_size());
-        printf("Minimum free heap: %lu bytes\n", esp_get_minimum_free_heap_size());
-        printf("Largest free block: %u bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT));
-        printf("========================\n\n");
-
-        vTaskDelay(5000 / portTICK_PERIOD_MS); // Ждем 5 секунд
+        char hostname[32] = {0};
+        size_t hostname_len = sizeof(hostname);
+        if (nvs_load_data("device", "hostname", hostname, &hostname_len, NVS_TYPE_STR) == ESP_OK)
+        {
+            dw_set_hostname_to_netif(WIFI_IF_STA, hostname);
+        }
+        mqtt_ledline_resources_init();
+        dw_set_user_sta_event_handler(NULL);
     }
 }
+
+//================================================================
+static esp_err_t sta_connect_attempt(void)
+{
+    // Проверяем, подключено ли устройство к Wi-Fi сети (AP + IP)
+    if (dw_check_wifi_connection_status() != ESP_OK)
+    {
+
+        wifi_sta_config_t sta_config = {0};
+        if (dwnvs_load_sta_config(&sta_config) == ESP_OK)
+        {
+            if (dw_station_connect(&sta_config, sta_event_handler, NULL) == ESP_OK)
+            {
+                return ESP_OK; // Успешно начали процесс подключения
+            }
+            else
+            {
+                return ESP_FAIL; // Ошибка инициации подключения
+            }
+        }
+        else
+        {
+            return ESP_FAIL; // Ошибка загрузки конфигурации
+        }
+    }
+    else
+    {
+        return ESP_OK; // Уже подключены
+    }
+}
+
 //================================================================
 void app_main(void)
 {
     nvs_storage_initialization();
 
-    // gpio_reset_pin(GPIO_NUM_36);
-    // gpio_set_direction(GPIO_NUM_36, GPIO_MODE_INPUT);
-    // gpio_set_pull_mode(GPIO_NUM_39, GPIO_PULLUP_ONLY);
+    gpio_reset_pin(GPIO_NUM_36);
+    gpio_set_direction(GPIO_NUM_36, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(GPIO_NUM_39, GPIO_PULLUP_ONLY);
 
-    // xTaskCreate(&heap_monitor_task, "heap_monitor", 2048, NULL, 5, NULL);
+    bool forced_launch = !gpio_get_level(GPIO_NUM_36);
 
-    // captive_portal_start("", "", !gpio_get_level(GPIO_NUM_36));
+    portal_start_with_sta_attempt("Ledline_config", "", forced_launch, sta_connect_attempt);
 
-    bool need_captive_portal = true;
-    captive_portal_start("", "", need_captive_portal);
     ledline_resources_init();
 
     while (1)

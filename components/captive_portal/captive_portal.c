@@ -6,10 +6,14 @@
 #include "server/server.h"
 #include "esp_err.h"
 
-#define CAPTIVE_PORTAL_LOGOUT (BIT1)
+#define PORTAL_LOGOUT (BIT1)
 
-static const char *TAG = "CAPP";
-static EventGroupHandle_t captive_status = NULL;
+static const char *TAG = "PORTAL";
+static EventGroupHandle_t portal_status = NULL;
+
+// Определяем тип колбэка
+typedef esp_err_t (*portal_sta_connect_attempt_cb_t)(void);
+
 //=================================================================
 static esp_err_t access_point_start(const char *ssid, const char *password)
 {
@@ -59,7 +63,7 @@ static esp_err_t access_point_start(const char *ssid, const char *password)
 
     ap_config.authmode = has_valid_password ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     ap_config.max_connection = 1;
-    ap_config.channel = 0;
+    ap_config.channel = 11;
     ap_config.ssid_hidden = 0;
 
     esp_err_t err = dw_access_point_start(&ap_config);
@@ -79,7 +83,7 @@ static esp_err_t access_point_start(const char *ssid, const char *password)
 }
 
 //=================================================================
-static void captive_portal_server_start(void)
+static void portal_server_start(void)
 {
     esp_netif_t *ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
 
@@ -89,31 +93,26 @@ static void captive_portal_server_start(void)
 }
 
 //=================================================================
-static void dw_sta_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+void portal_start_with_sta_attempt(const char *ssid, const char *password, bool start_ap, portal_sta_connect_attempt_cb_t try_sta_connect)
 {
-    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
-    {
-        char hostname[32] = {0};
-        size_t hostname_len = sizeof(hostname);
-        if (nvs_load_data("device", "hostname", hostname, &hostname_len, NVS_TYPE_STR) == ESP_OK)
-        {
-            dw_set_hostname_to_netif(WIFI_IF_STA, hostname);
-        }
-    }
-}
+    char standalone[8] = {0};
+    size_t str_size = sizeof(standalone);
+    esp_err_t err = nvs_load_data("wifi", "standalone", standalone, &str_size, NVS_TYPE_STR);
 
-//=================================================================
-void captive_portal_start(const char *ssid, const char *password, bool start_ap)
-{
+    bool ap_mode_active = false;
+    bool standalone_mode = (err == ESP_OK && strcmp(standalone, "true") == 0) ? true : false;
+
+    if (!start_ap && standalone_mode)
+        return;
+
     dw_resources_init();
-    bool ap_mode_active = false; // Флаг для отслеживания режима AP
 
-    if (captive_status == NULL)
+    if (portal_status == NULL)
     {
-        captive_status = xEventGroupCreate();
-        if (captive_status == NULL)
+        portal_status = xEventGroupCreate();
+        if (portal_status == NULL)
         {
-            ESP_LOGE(TAG, "Failed to create captive event status");
+            ESP_LOGE(TAG, "Failed to create portal event status");
         }
     }
 
@@ -135,8 +134,8 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
             ESP_LOGI(TAG, "Starting AP with provided SSID: %s", ssid);
             if (access_point_start(ssid, password) == ESP_OK)
             {
-                ESP_LOGI(TAG, "AP started successfully. Starting captive portal server.");
-                captive_portal_server_start();
+                ESP_LOGI(TAG, "AP started successfully. Starting portal server.");
+                portal_server_start();
                 ap_mode_active = true;
             }
             else
@@ -155,8 +154,8 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
                 if (access_point_start((const char *)ap_config.ssid,
                                        (const char *)ap_config.password) == ESP_OK)
                 {
-                    ESP_LOGI(TAG, "AP started with saved config. Starting captive portal server.");
-                    captive_portal_server_start();
+                    ESP_LOGI(TAG, "AP started with saved config. Starting portal server.");
+                    portal_server_start();
                     ap_mode_active = true;
                 }
             }
@@ -165,11 +164,11 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
         // Fallback AP
         if (!ap_mode_active)
         {
-            ESP_LOGI(TAG, "Starting fallback AP: CaptivePortal");
-            if (access_point_start("CaptivePortal", NULL) == ESP_OK)
+            ESP_LOGI(TAG, "Starting fallback AP: PortalFallback");
+            if (access_point_start("PortalFallback", NULL) == ESP_OK)
             {
-                ESP_LOGI(TAG, "Fallback AP started. Starting captive portal server.");
-                captive_portal_server_start();
+                ESP_LOGI(TAG, "Fallback AP started. Starting portal server.");
+                portal_server_start();
                 ap_mode_active = true;
             }
             else
@@ -179,40 +178,39 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
         }
     }
 
-    // 2. Если AP не требуется, пробуем подключиться как STA
-    if (!ap_required)
+    // 2. Если AP не требуется и standalone_mode == true, подключение как STA не производится
+    if (!ap_required && !standalone_mode)
     {
-        wifi_sta_config_t sta_config = {0};
-        bool sta_config_loaded = (dwnvs_load_sta_config(&sta_config) == ESP_OK);
-
-        if (sta_config_loaded)
+        if (try_sta_connect == NULL)
         {
-            ESP_LOGI(TAG, "STA configuration loaded. Attempting to connect to: %s", sta_config.ssid);
-            if (dw_station_connect(&sta_config, dw_sta_event_handler, NULL) == ESP_OK)
+            ESP_LOGI(TAG, "try_sta_connect is NULL. Skipping STA connection, starting AP as fallback.");
+        }
+        else
+        {
+            ESP_LOGI(TAG, "try_sta_connect is provided. Attempting to connect as STA...");
+
+            esp_err_t sta_result = try_sta_connect();
+
+            if (sta_result == ESP_OK)
             {
-                ESP_LOGI(TAG, "Successfully started STA connection to: %s", sta_config.ssid);
+                ESP_LOGI(TAG, "STA connection successful via callback. Returning.");
                 return; // Успешно подключились — выходим
             }
             else
             {
-                ESP_LOGW(TAG, "Failed to start STA connection. Deleting config and starting AP.");
-                dwnvs_delete_sta_config(); // Удаляем битую конфигурацию
+                ESP_LOGW(TAG, "STA connection failed via callback. Starting AP as fallback.");
             }
         }
-        else
-        {
-            ESP_LOGI(TAG, "No STA configuration found. Starting AP.");
-        }
 
-        // 3. Если STA не удался, принудительно запускаем AP
-        ESP_LOGI(TAG, "STA connection failed. Starting AP as fallback.");
+        // 3. Если STA не удался или колбэк не был вызван, запускаем AP
+        ESP_LOGI(TAG, "STA connection failed or not attempted. Starting AP as fallback.");
         if (ssid != NULL && strlen(ssid) > 0)
         {
             ESP_LOGI(TAG, "Starting AP with provided SSID: %s", ssid);
             if (access_point_start(ssid, password) == ESP_OK)
             {
-                ESP_LOGI(TAG, "Fallback AP started. Starting captive portal server.");
-                captive_portal_server_start();
+                ESP_LOGI(TAG, "Fallback AP started. Starting portal server.");
+                portal_server_start();
                 ap_mode_active = true;
             }
         }
@@ -227,8 +225,8 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
                 if (access_point_start((const char *)ap_config.ssid,
                                        (const char *)ap_config.password) == ESP_OK)
                 {
-                    ESP_LOGI(TAG, "AP started with saved config. Starting captive portal server.");
-                    captive_portal_server_start();
+                    ESP_LOGI(TAG, "AP started with saved config. Starting portal server.");
+                    portal_server_start();
                     ap_mode_active = true;
                 }
             }
@@ -237,11 +235,11 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
         // Fallback AP
         if (!ap_mode_active)
         {
-            ESP_LOGI(TAG, "Starting fallback AP: CaptivePortal");
-            if (access_point_start("CaptivePortal", NULL) == ESP_OK)
+            ESP_LOGI(TAG, "Starting fallback AP: PortalFallback");
+            if (access_point_start("PortalFallback", NULL) == ESP_OK)
             {
-                ESP_LOGI(TAG, "Fallback AP started. Starting captive portal server.");
-                captive_portal_server_start();
+                ESP_LOGI(TAG, "Fallback AP started. Starting portal server.");
+                portal_server_start();
                 ap_mode_active = true;
             }
             else
@@ -251,25 +249,33 @@ void captive_portal_start(const char *ssid, const char *password, bool start_ap)
         }
     }
 
-    // Если AP успешно запущен, входим в бесконечный цикл
+    // Если AP успешно запущен, входим в бесконечный цикл (если не standalone)
     if (ap_mode_active)
     {
         ESP_LOGI(TAG, "AP mode active - entering infinite loop...");
         while (1)
         {
-            EventBits_t bits = xEventGroupWaitBits(captive_status, CAPTIVE_PORTAL_LOGOUT, true, pdTRUE, 0);
-            if (bits & CAPTIVE_PORTAL_LOGOUT)
+            EventBits_t bits = xEventGroupWaitBits(portal_status, PORTAL_LOGOUT, true, pdTRUE, 0);
+            if (bits & PORTAL_LOGOUT)
             {
+                err = nvs_load_data("wifi", "standalone", standalone, &str_size, NVS_TYPE_STR);
+                standalone_mode = (err == ESP_OK && strcmp(standalone, "true") == 0) ? true : false;
+                
+                if(!standalone_mode && try_sta_connect != NULL)
+                {
+                    try_sta_connect();
+                }
+
                 break;
             }
 
-            vTaskDelay(pdMS_TO_TICKS(1000)); // Делаем паузу 1 секунда, чтобы не нагружать CPU
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
 }
 
 //=================================================================
-void captive_portal_stop(bool isStopSTA)
+void portal_stop(bool stop_sta)
 {
     ESP_LOGI(TAG, "Stopping DNS server...");
     captive_portal_dns_server_stop();
@@ -283,7 +289,7 @@ void captive_portal_stop(bool isStopSTA)
     captive_portal_ws_server_stop();
     ESP_LOGI(TAG, "WebSocket server stopped.");
 
-    if (isStopSTA)
+    if (stop_sta)
     {
         ESP_LOGI(TAG, "Stopping Wi-Fi Station mode...");
         dw_station_stop();
@@ -295,7 +301,7 @@ void captive_portal_stop(bool isStopSTA)
     ESP_LOGI(TAG, "Cleanup Wi-Fi module...");
     dw_wifi_cleanup();
 
-    ESP_LOGI(TAG, "Captive portal fully stopped.");
+    ESP_LOGI(TAG, "Portal fully stopped.");
 
-    xEventGroupSetBits(captive_status, CAPTIVE_PORTAL_LOGOUT);
+    xEventGroupSetBits(portal_status, PORTAL_LOGOUT);
 }

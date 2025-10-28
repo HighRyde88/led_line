@@ -16,11 +16,16 @@
 #include "modules.h"
 #include "esp_app_desc.h"
 #include "esp_bootloader_desc.h"
+#include "data_parser.h"
 
 #define DISCONNECT_BY_USER (BIT1)
 
 static const char *TAG = "Wifi module";
 static EventGroupHandle_t captive_wifi_group = NULL;
+
+static const config_param_t wifi_params[] = {
+    {"standalone", "standalone"},
+};
 //=================================================================
 static void wifi_scan_done_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -412,6 +417,16 @@ esp_err_t wifi_module_target(cJSON *json)
     }
     else if (strcmp(action->valuestring, "connect_ap_attempt") == 0)
     {
+        char standalone[8] = {0};
+        size_t str_size = sizeof(standalone);
+        esp_err_t err = nvs_load_data("wifi", "standalone", standalone, &str_size, NVS_TYPE_STR);
+
+        if (err == ESP_OK && strcmp(standalone, "true") == 0)
+        {
+            send_response_json("response", "wifi", "connect_ap_failed", "standalone mode active");
+            return ESP_OK;
+        }
+
         cJSON *data_obj = cJSON_GetObjectItemCaseSensitive(json, "data");
         if (!cJSON_IsObject(data_obj))
         {
@@ -496,7 +511,7 @@ esp_err_t wifi_module_target(cJSON *json)
         ESP_LOGI(TAG, "Connecting to SSID: %s, Auth mode: %d", ssid->valuestring, sta_config.threshold.authmode);
 
         dwnvs_delete_sta_config();
-        esp_err_t err = dw_station_connect_with_auto_reconnect(&sta_config, captive_sta_event_handler, NULL, false);
+        err = dw_station_connect_with_auto_reconnect(&sta_config, captive_sta_event_handler, NULL, false);
 
         if (err == ESP_OK)
         {
@@ -558,7 +573,7 @@ esp_err_t wifi_module_target(cJSON *json)
 
         cJSON_AddStringToObject(response, "type", "response");
         cJSON_AddStringToObject(response, "target", "wifi");
-        cJSON_AddStringToObject(response, "status", "load_connection_status_success");
+        cJSON_AddStringToObject(response, "status", "load_connection_status");
 
         // Создаем объект данных
         cJSON *data_obj = cJSON_CreateObject();
@@ -648,58 +663,68 @@ esp_err_t wifi_module_target(cJSON *json)
         cJSON_AddStringToObject(response, "type", "response");
         cJSON_AddStringToObject(response, "target", "wifi");
 
+        char standalone[8] = {0};
+        size_t str_size = sizeof(standalone);
+        esp_err_t err = nvs_load_data("wifi", "standalone", standalone, &str_size, NVS_TYPE_STR);
+
+        if (err != ESP_OK)
+        {
+            snprintf(standalone, sizeof(standalone), "false");
+        }
+
         wifi_sta_config_t wifi_sta = {0};
-        esp_err_t err = dwnvs_load_sta_config(&wifi_sta);
+        err = dwnvs_load_sta_config(&wifi_sta);
+
+        cJSON_AddStringToObject(response, "status", "load_ap_config");
+        cJSON *data_obj = cJSON_CreateObject();
 
         if (err == ESP_OK)
         {
-            cJSON_AddStringToObject(response, "status", "load_ap_config_success");
-            cJSON *data_obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(data_obj, "ssid", (char *)wifi_sta.ssid);
+            cJSON_AddStringToObject(data_obj, "password", (char *)wifi_sta.password);
+            cJSON_AddStringToObject(data_obj, "standalone", standalone);
 
-            if (data_obj != NULL)
+            const char *auth_str = "UNKNOWN";
+            switch (wifi_sta.threshold.authmode)
             {
-                cJSON_AddStringToObject(data_obj, "ssid", (char *)wifi_sta.ssid);
-                cJSON_AddStringToObject(data_obj, "password", (char *)wifi_sta.password);
-
-                const char *auth_str = "UNKNOWN";
-                switch (wifi_sta.threshold.authmode)
-                {
-                case WIFI_AUTH_OPEN:
-                    auth_str = "OPEN";
-                    break;
-                case WIFI_AUTH_WEP:
-                    auth_str = "WEP";
-                    break;
-                case WIFI_AUTH_WPA_PSK:
-                    auth_str = "WPA";
-                    break;
-                case WIFI_AUTH_WPA2_PSK:
-                    auth_str = "WPA2";
-                    break;
-                case WIFI_AUTH_WPA_WPA2_PSK:
-                    auth_str = "WPA/WPA2";
-                    break;
-                case WIFI_AUTH_WPA2_ENTERPRISE:
-                    auth_str = "WPA2-Enterprise";
-                    break;
-                case WIFI_AUTH_WPA3_PSK:
-                    auth_str = "WPA3";
-                    break;
-                case WIFI_AUTH_WPA2_WPA3_PSK:
-                    auth_str = "WPA2/WPA3";
-                    break;
-                default:
-                    auth_str = "UNKNOWN";
-                    break;
-                }
-                cJSON_AddStringToObject(data_obj, "authmode", auth_str);
+            case WIFI_AUTH_OPEN:
+                auth_str = "OPEN";
+                break;
+            case WIFI_AUTH_WEP:
+                auth_str = "WEP";
+                break;
+            case WIFI_AUTH_WPA_PSK:
+                auth_str = "WPA";
+                break;
+            case WIFI_AUTH_WPA2_PSK:
+                auth_str = "WPA2";
+                break;
+            case WIFI_AUTH_WPA_WPA2_PSK:
+                auth_str = "WPA/WPA2";
+                break;
+            case WIFI_AUTH_WPA2_ENTERPRISE:
+                auth_str = "WPA2-Enterprise";
+                break;
+            case WIFI_AUTH_WPA3_PSK:
+                auth_str = "WPA3";
+                break;
+            case WIFI_AUTH_WPA2_WPA3_PSK:
+                auth_str = "WPA2/WPA3";
+                break;
+            default:
+                auth_str = "UNKNOWN";
+                break;
             }
-            cJSON_AddItemToObject(response, "data", data_obj);
+            cJSON_AddStringToObject(data_obj, "authmode", auth_str);
         }
         else
         {
-            cJSON_AddStringToObject(response, "status", "load_ap_config_empty");
+            cJSON_AddNullToObject(data_obj, "ssid");
+            cJSON_AddNullToObject(data_obj, "password");
+            cJSON_AddStringToObject(data_obj, "standalone", standalone);
         }
+
+        cJSON_AddItemToObject(response, "data", data_obj);
 
         char *json_str = cJSON_PrintUnformatted(response);
         cJSON_Delete(response);
@@ -715,6 +740,32 @@ esp_err_t wifi_module_target(cJSON *json)
         }
 
         return ESP_OK;
+    }
+    else if (strcmp(action->valuestring, "save_partial") == 0)
+    {
+        cJSON *data_obj = cJSON_GetObjectItemCaseSensitive(json, "data");
+        if (data_obj == NULL)
+        {
+            ESP_LOGW(TAG, "Missing 'data' in save request");
+            send_response_json("response", "wifi", "error_partial", "\"missing 'data'\"");
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        esp_err_t result = parse_and_save_json_settings(
+            "wifi",
+            data_obj,
+            wifi_params,
+            sizeof(wifi_params) / sizeof(wifi_params[0]));
+
+        if (result == ESP_OK)
+        {
+            send_response_json("response", "wifi", "saved_partial", NULL);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Save failed: %s", esp_err_to_name(result));
+            send_response_json("response", "wifi", "error_partial", "save failed");
+        }
     }
     else
     {

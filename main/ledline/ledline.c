@@ -1,6 +1,7 @@
 #include "ledline.h"
 
 led_strip_handle_t led_strip = NULL;
+uint32_t leds_num = 0;
 
 static const char *TAG = "led_strip";
 //=================================================================
@@ -82,15 +83,15 @@ esp_err_t ledline_resources_init(void)
         ESP_LOGI(TAG, "Using default LED count: %d", lednum);
     }
 
-    led_strip = ledline_create(lednum);
+    leds_num = lednum;
+    led_strip = ledline_create(leds_num);
     if (led_strip == NULL)
     {
         ESP_LOGE(TAG, "Failed to create LED strip with %d LEDs", lednum);
         return ESP_FAIL;
     }
 
-    mqtt_ledline_resources_init();
-
     ESP_LOGI(TAG, "LED strip resources initialized successfully with %d LEDs", lednum);
     return ESP_OK;
 }
+//=================================================================
