@@ -2,16 +2,17 @@
 window.ModulesRegistry = (function() {
   const modules = new Map();
 
-  function register(name, moduleClass, condition = () => true) {
-    modules.set(name, { class: moduleClass, condition });
+  function register(name, moduleClass, constructorArgs = []) {
+    modules.set(name, { 
+      class: moduleClass, 
+      args: constructorArgs 
+    });
   }
 
   function getModules() {
     const activeModules = [];
-    for (const [name, { class: ModuleClass, condition }] of modules) {
-      if (condition()) {
-        activeModules.push(new ModuleClass());
-      }
+    for (const [name, { class: ModuleClass, args }] of modules) {
+      activeModules.push(new ModuleClass(...args));
     }
     return activeModules;
   }
@@ -25,5 +26,6 @@ window.ModulesRegistry = (function() {
   register("wifi", WifiModule);
   register("mqtt", MqttModule);
   register("update", UpdateModule);
+
   return { register, getModules };
 })();

@@ -10,7 +10,7 @@ const ethernet_status = $("ethernet-status");
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_INTERVAL = 1000;
 
-let webSocket = null;
+// Удалена локальная переменная webSocket
 let reconnectAttempts = 0;
 let notificationTimers = { settingsStatus: null, statusAction: null };
 
@@ -20,12 +20,12 @@ function initWebSocket() {
   const port = window.location.port ? `:${window.location.port}` : ":8810";
   const url = `${protocol}//${host}${port}`;
   try {
-    webSocket = new WebSocket(url);
-    webSocket.onopen = () => {
+    window.webSocket = new WebSocket(url);
+    window.webSocket.onopen = () => {
       reconnectAttempts = 0;
       console.log("WebSocket connected");
     };
-    webSocket.onmessage = (event) => {
+    window.webSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
 
@@ -39,8 +39,8 @@ function initWebSocket() {
         console.error("Parse error:", e);
       }
     };
-    webSocket.onclose = handleWebSocketClose;
-    webSocket.onerror = handleWebSocketError;
+    window.webSocket.onclose = handleWebSocketClose;
+    window.webSocket.onerror = handleWebSocketError;
   } catch (e) {
     console.error("WebSocket init failed:", e);
     handleWebSocketError();
@@ -66,13 +66,13 @@ function reconnectIfNeeded(callback) {
 }
 
 function sendWS(data) {
-  if (!webSocket || webSocket.readyState !== WebSocket.OPEN) {
+  if (!window.webSocket || window.webSocket.readyState !== WebSocket.OPEN) {
     return false;
   }
 
   try {
     console.log(JSON.stringify(data));
-    webSocket.send(JSON.stringify(data));
+    window.webSocket.send(JSON.stringify(data));
     return true; // Успешно отправлено
   } catch (e) {
     console.error("Send error:", e);
@@ -204,8 +204,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
 window.addEventListener("beforeunload", () => {
   Object.values(notificationTimers).forEach((timer) => clearTimeout(timer));
-  if (webSocket) {
-    webSocket.onclose = null;
-    webSocket.close();
+  if (window.webSocket) {
+    window.webSocket.onclose = null;
+    window.webSocket.close();
   }
 });

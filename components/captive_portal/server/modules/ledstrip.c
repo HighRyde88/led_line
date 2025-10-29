@@ -21,7 +21,7 @@ static const char *TAG = "ledstrip module";
 static const config_param_t ledstrip_params[] = {
     {"lednum", "lednum"},
     {"hostname", "hostname"},
-};
+    {"ledpin", "ledpin"}};
 //=================================================================
 esp_err_t ledstrip_module_target(cJSON *json)
 {

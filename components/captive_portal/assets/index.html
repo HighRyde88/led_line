@@ -56,7 +56,7 @@
               <div class="form-group toggle-group">
                 <label class="toggle-label">Автономный режим</label>
                 <label class="switch">
-                  <input type="checkbox" id="standalone-mode-toggle"/>
+                  <input type="checkbox" id="standalone-mode-toggle" />
                   <span class="slider round"></span>
                 </label>
               </div>
@@ -181,6 +181,19 @@
               </button>
               <div class="accordion-body">
                 <div class="settings-form-group">
+                  <label for="led-pin" class="settings-label"
+                    >Номер порта RMT:</label
+                  >
+                  <input
+                    type="number"
+                    id="led-pin"
+                    name="led-pin"
+                    class="settings-input"
+                    placeholder="Введите порт подключения"
+                  />
+                </div>
+
+                <div class="settings-form-group">
                   <label for="led-count" class="settings-label"
                     >Количество светодиодов:</label
                   >
@@ -192,6 +205,7 @@
                     placeholder="Введите количество светодиодов"
                   />
                 </div>
+
                 <div class="settings-form-group">
                   <label for="next-device-hostname" class="settings-label"
                     >Имя устройства (опционально):</label
@@ -462,7 +476,6 @@
         </div>
       </div>
     </div>
-
     <!-- Ядро и базовый класс -->
     <script src="settings_core.js"></script>
     <script src="base_module.js"></script>

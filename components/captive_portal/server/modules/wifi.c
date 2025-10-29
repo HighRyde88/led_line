@@ -49,7 +49,7 @@ static void wifi_scan_done_handler(void *arg, esp_event_base_t event_base, int32
 
     cJSON_AddStringToObject(response, "type", "event");
     cJSON_AddStringToObject(response, "target", "wifi");
-    cJSON_AddStringToObject(response, "status", "scan_ap_completed");
+    cJSON_AddStringToObject(response, "status", "ap_scan_success");
 
     cJSON *data_obj = cJSON_CreateObject();
     if (!data_obj)
@@ -280,26 +280,26 @@ esp_err_t wifi_module_target(cJSON *json)
         }
     }
 
-    if (strcmp(action->valuestring, "scan_ap_start") == 0)
+    if (strcmp(action->valuestring, "ap_scan_start") == 0)
     {
         esp_err_t scan_err = dw_station_scan_start(wifi_scan_done_handler, NULL);
 
         if (scan_err == ESP_OK)
         {
-            send_response_json("response", "wifi", "scan_ap_started", NULL);
+            send_response_json("response", "wifi", "ap_scan_started", NULL);
         }
         else if (scan_err == ESP_ERR_INVALID_STATE)
         {
-            send_response_json("response", "wifi", "scan_ap_already_started", NULL);
+            send_response_json("response", "wifi", "ap_scan_already", NULL);
         }
         else
         {
-            send_response_json("response", "wifi", "scan_ap_failed", esp_err_to_name(scan_err));
+            send_response_json("response", "wifi", "ap_scan_error", esp_err_to_name(scan_err));
         }
 
         return ESP_OK;
     }
-    else if (strcmp(action->valuestring, "scan_ap_results") == 0)
+    else if (strcmp(action->valuestring, "ap_scan_result") == 0)
     {
         uint16_t count = 0;
         wifi_ap_record_t *list = NULL;
@@ -307,7 +307,7 @@ esp_err_t wifi_module_target(cJSON *json)
         esp_err_t err = dw_station_scan_result(&count, &list);
         if (err != ESP_OK)
         {
-            send_response_json("response", "wifi", "scan_ap_error", "scan data unavailable");
+            send_response_json("response", "wifi", "ap_scan_error", "scan data unavailable");
             return err;
         }
 
@@ -321,7 +321,7 @@ esp_err_t wifi_module_target(cJSON *json)
 
         cJSON_AddStringToObject(response, "type", "response");
         cJSON_AddStringToObject(response, "target", "wifi");
-        cJSON_AddStringToObject(response, "status", "scan_ap_results");
+        cJSON_AddStringToObject(response, "status", "ap_scan_result");
 
         cJSON *data_obj = cJSON_CreateObject();
         if (!data_obj)

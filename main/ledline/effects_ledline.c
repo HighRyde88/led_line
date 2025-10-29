@@ -50,35 +50,18 @@ static void state_manager(void *data)
         return;
 
     char *state = (char *)data;
-
-    if (strcmp(state, "enable") == 0)
-    {
-        current_effect = store_effect;
-        store_effect = NULL;
-    }
-    else if (strcmp(state, "enable") == 0)
-    {
-        store_effect = current_effect;
-        current_effect = NULL;
-    }
 }
 
 static void color_manager(void *data)
 {
     if (data == NULL)
         return;
-
-    current_effect = &effect_manager[0];
 }
 
 static void brightness_manager(void *data)
 {
     if (data == NULL)
         return;
-
-    char *precent_str = (char *)data;
-    uint8_t percent = atoi(precent_str);
-    //current_brightness = (uint8_t)((percent * 255.0f) / 100.0f);
 }
 //=================================================================
 void task_effects(void *pvParameters)
@@ -136,7 +119,6 @@ void task_effects(void *pvParameters)
             }
         }
 
-        // Вызов эффекта
         if (current_effect != NULL && current_effect->effect_func != NULL)
         {
             if (current_effect->circular)
@@ -161,29 +143,4 @@ static void static_effect(void *data)
     {
         return;
     }
-
-    char *color_raw = (char *)data;
-    uint32_t color_hex = color_string_to_uint32(color_raw);
-    rgb_t target_color = rgb_from_code(color_hex);
-
-    if(!compare_rgb(&target_color, &static_color_rgb)){
-
-    }
-
-
-    for (int i = 0; i <= 5; ++i)
-    {
-        fract16 frac = (fract16)((65535 * i) / 5);
-        rgb_t result = rgb_lerp16(current_color_rgb, target_color, frac);
-
-        for (uint32_t led = 0; led < leds_num; led++)
-        {
-            led_strip_set_pixel(led_strip, led, result.red, result.green, result.blue);
-        }
-        led_strip_refresh(led_strip);
-
-        vTaskDelay(5 / portTICK_PERIOD_MS);
-    }
-
-    current_color_rgb = rgb_from_code(color_hex);
 }

@@ -65,6 +65,8 @@ static esp_err_t access_point_start(const char *ssid, const char *password)
     ap_config.max_connection = 1;
     ap_config.channel = 11;
     ap_config.ssid_hidden = 0;
+    ap_config.beacon_interval = 100;
+    
 
     esp_err_t err = dw_access_point_start(&ap_config);
     if (err == ESP_OK)

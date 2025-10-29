@@ -3,6 +3,7 @@ class LedStripModule extends BaseSettingsModule {
     super();
     this.lednum = document.getElementById("led-count");
     this.hostname = document.getElementById("next-device-hostname");
+    this.ledpin = document.getElementById("led-pin");
   }
 
   getRoutes() {
@@ -13,14 +14,23 @@ class LedStripModule extends BaseSettingsModule {
 
   save() {
     const lednumValue = this.lednum?.value?.trim();
+    const ledpinValue = this.ledpin?.value?.trim();
 
     if (!lednumValue) {
       alert("Введите количество светодиодов!");
       return null;
     }
 
+    if (!ledpinValue) {
+      alert("Введите порт подключения!");
+      return null;
+    }
+
     const hostnameValue = this.hostname?.value?.trim();
-    const result = { lednum: lednumValue };
+    const result = {
+      lednum: lednumValue,
+      ledpin: ledpinValue,
+    };
 
     if (hostnameValue) {
       result.hostname = hostnameValue;
@@ -67,6 +77,7 @@ class LedStripModule extends BaseSettingsModule {
       const load_data = data?.data || {};
 
       if (this.lednum) this.lednum.value = load_data.lednum || "";
+      if (this.ledpin) this.ledpin.value = load_data.ledpin || "";
       if (this.hostname) this.hostname.value = load_data.hostname || "";
     },
   };

@@ -1054,7 +1054,7 @@ esp_err_t dw_station_scan_start(esp_event_handler_t event, void *arg)
         wifi_mutex_unlock();
         return err;
     }
-    wifi_scan_config_t scan_config = {
+    /*wifi_scan_config_t scan_config = {
         .ssid = NULL,
         .bssid = NULL,
         .channel = 0,
@@ -1064,6 +1064,10 @@ esp_err_t dw_station_scan_start(esp_event_handler_t event, void *arg)
             .active = {
                 .min = 100,
                 .max = 300}}};
+    */
+
+    wifi_scan_config_t scan_config = WIFI_SCAN_PARAMS_DEFAULT_CONFIG();
+
     err = esp_wifi_scan_start(&scan_config, false);
     // Если сканирование не удалось запустить, сбрасываем флаг
     if (err != ESP_OK)
