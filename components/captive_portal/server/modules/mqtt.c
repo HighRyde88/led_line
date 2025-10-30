@@ -83,6 +83,35 @@ esp_err_t mqtt_module_target(cJSON *json)
             return ESP_ERR_INVALID_ARG;
         }
 
+        cJSON *port_item = cJSON_GetObjectItemCaseSensitive(data_obj, "port");
+        if (port_item != NULL && cJSON_IsString(port_item))
+        {
+            int temp_port = atoi(port_item->valuestring);
+            if (temp_port <= 0 || temp_port > 65535)
+            {
+                ESP_LOGE(TAG, "Invalid MQTT port provided: %s", port_item->valuestring);
+                send_response_json("response", "mqtt", "error_partial", "invalid port provided (must be 1-65535)");
+                return ESP_ERR_INVALID_ARG;
+            }
+        }
+
+        // Проверка длины всех строковых полей
+        cJSON *current_item = data_obj->child;
+        while (current_item != NULL)
+        {
+            if (cJSON_IsString(current_item) && current_item->valuestring != NULL)
+            {
+                size_t str_len = strlen(current_item->valuestring);
+                if (str_len > 31) // 32 байта, включая null-терминатор
+                {
+                    ESP_LOGE(TAG, "String field '%s' too long: %zu characters (max 31)", current_item->string, str_len);
+                    send_response_json("response", "mqtt", "error_partial", "string field too long (max 31 characters)");
+                    return ESP_ERR_INVALID_ARG;
+                }
+            }
+            current_item = current_item->next;
+        }
+
         result = parse_and_save_json_settings(
             "mqtt",
             data_obj,

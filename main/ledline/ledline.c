@@ -1,4 +1,5 @@
 #include "ledline.h"
+#include "driver/gpio.h"
 
 led_strip_handle_t led_strip = NULL;
 uint32_t leds_num = 0;
@@ -81,8 +82,13 @@ esp_err_t ledline_resources_init(void)
 
     if (result == ESP_OK && lednum_size > 0 && lednum_str[0] != '\0')
     {
-        lednum = atoi(lednum_str);
-        ESP_LOGI(TAG, "Loaded LED count from NVS: %d", lednum);
+        int temp_lednum = atoi(lednum_str);
+        if (temp_lednum > 0) {
+            lednum = temp_lednum;
+            ESP_LOGI(TAG, "Loaded LED count from NVS: %d", lednum);
+        } else {
+            ESP_LOGW(TAG, "Invalid LED count loaded from NVS: %s, using default: %d", lednum_str, lednum);
+        }
     }
     else
     {
@@ -93,8 +99,13 @@ esp_err_t ledline_resources_init(void)
 
     if (result == ESP_OK && ledpin_size > 0 && ledpin_str[0] != '\0')
     {
-        ledpin = atoi(ledpin_str);
-        ESP_LOGI(TAG, "Loaded LED pin from NVS: %d", ledpin);
+        int temp_ledpin = atoi(ledpin_str);
+        if (GPIO_IS_VALID_OUTPUT_GPIO(temp_ledpin)) {
+            ledpin = temp_ledpin;
+            ESP_LOGI(TAG, "Loaded LED pin from NVS: %d", ledpin);
+        } else {
+            ESP_LOGW(TAG, "Invalid LED pin loaded from NVS: %s, using default: %d", ledpin_str, ledpin);
+        }
     }
     else
     {
@@ -102,7 +113,6 @@ esp_err_t ledline_resources_init(void)
     }
 
     leds_num = lednum;
-
 
     led_strip = ledline_create(leds_num, ledpin);
     if (led_strip == NULL)

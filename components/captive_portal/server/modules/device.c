@@ -43,6 +43,19 @@ esp_err_t device_module_target(cJSON *json)
             return ESP_ERR_INVALID_ARG;
         }
 
+        // Проверим hostname на валидность длины
+        cJSON *hostname_obj = cJSON_GetObjectItemCaseSensitive(data_obj, "hostname");
+        if (cJSON_IsString(hostname_obj) && hostname_obj->valuestring != NULL)
+        {
+            size_t hostname_len = strlen(hostname_obj->valuestring);
+            if (hostname_len > 63) // ESP-IDF обычно ограничивает hostname до 63 байт
+            {
+                ESP_LOGE(TAG, "Hostname too long: %zu characters (max 63)", hostname_len);
+                send_response_json("response", "device", "error_partial", "\"Hostname too long (max 63 characters)\"");
+                return ESP_ERR_INVALID_ARG;
+            }
+        }
+
         esp_err_t result = parse_and_save_json_settings(
             "device",
             data_obj,
@@ -56,8 +69,6 @@ esp_err_t device_module_target(cJSON *json)
             return result;
         }
 
-        cJSON *hostname_obj = cJSON_GetObjectItemCaseSensitive(data_obj, "hostname");
-
         if (cJSON_IsString(hostname_obj) && hostname_obj->valuestring != NULL)
         {
             dw_set_hostname_to_netif(WIFI_IF_STA, hostname_obj->valuestring);
@@ -65,7 +76,7 @@ esp_err_t device_module_target(cJSON *json)
         else
         {
             ESP_LOGI(TAG, "Hostname not provided, skipping hostname update");
-            result = ESP_OK; 
+            result = ESP_OK;
         }
 
         if (result == ESP_OK)

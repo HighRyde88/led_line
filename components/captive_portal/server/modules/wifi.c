@@ -123,7 +123,7 @@ static void captive_sta_event_handler(void *arg, esp_event_base_t event_base, in
         {
             cJSON_AddStringToObject(response, "type", "event");
             cJSON_AddStringToObject(response, "target", "wifi");
-            cJSON_AddStringToObject(response, "status", "ap_connect_success");
+            cJSON_AddStringToObject(response, "status", "ap_got_ip");
 
             cJSON *data_obj = cJSON_CreateObject();
             if (data_obj)
@@ -230,7 +230,7 @@ static void captive_sta_event_handler(void *arg, esp_event_base_t event_base, in
         {
             cJSON_AddStringToObject(response, "type", "event");
             cJSON_AddStringToObject(response, "target", "wifi");
-            cJSON_AddStringToObject(response, "status", "ap_disconnect_from_reason");
+            cJSON_AddStringToObject(response, "status", "ap_disconnected_from_reason");
 
             cJSON *data_obj = cJSON_CreateObject();
             if (data_obj)
@@ -415,7 +415,7 @@ esp_err_t wifi_module_target(cJSON *json)
         dw_free_scan_result(list);
         return ESP_OK;
     }
-    else if (strcmp(action->valuestring, "ac_connect") == 0)
+    else if (strcmp(action->valuestring, "ap_connect") == 0)
     {
         char standalone[8] = {0};
         size_t str_size = sizeof(standalone);
@@ -431,7 +431,24 @@ esp_err_t wifi_module_target(cJSON *json)
         if (!cJSON_IsObject(data_obj))
         {
             send_response_json("response", "wifi", "ap_connect_error", "missing or invalid 'data'");
-            return ESP_OK; // Не возвращаем ошибку, т.к. это ошибка клиента
+            return ESP_OK;
+        }
+
+        // Проверка длины всех строковых полей в data_obj
+        cJSON *current_item = data_obj->child;
+        while (current_item != NULL)
+        {
+            if (cJSON_IsString(current_item) && current_item->valuestring != NULL)
+            {
+                size_t str_len = strlen(current_item->valuestring);
+                if (str_len >= 32) // 32 символа, включая null-терминатор
+                {
+                    ESP_LOGE(TAG, "String field '%s' too long: %zu characters (max 31)", current_item->string, str_len);
+                    send_response_json("response", "wifi", "ap_connect_error", "string field too long (max 31 characters)");
+                    return ESP_OK;
+                }
+            }
+            current_item = current_item->next;
         }
 
         cJSON *ssid = cJSON_GetObjectItemCaseSensitive(data_obj, "ssid");
@@ -467,6 +484,20 @@ esp_err_t wifi_module_target(cJSON *json)
 
         if (cJSON_IsString(authmode) && authmode->valuestring != NULL)
         {
+            // Валидация authmode: проверим, что значение входит в допустимый список
+            if (strcmp(authmode->valuestring, "OPEN") != 0 &&
+                strcmp(authmode->valuestring, "WEP") != 0 &&
+                strcmp(authmode->valuestring, "WPA") != 0 &&
+                strcmp(authmode->valuestring, "WPA2") != 0 &&
+                strcmp(authmode->valuestring, "WPA/WPA2") != 0 &&
+                strcmp(authmode->valuestring, "WPA3") != 0 &&
+                strcmp(authmode->valuestring, "WPA2/WPA3") != 0)
+            {
+                ESP_LOGE(TAG, "Invalid authmode provided: %s", authmode->valuestring);
+                send_response_json("response", "wifi", "ap_connect_error", "invalid authmode");
+                return ESP_OK;
+            }
+
             if (strcmp(authmode->valuestring, "OPEN") == 0)
                 auth_mode = WIFI_AUTH_OPEN;
             else if (strcmp(authmode->valuestring, "WEP") == 0)
@@ -481,11 +512,11 @@ esp_err_t wifi_module_target(cJSON *json)
                 auth_mode = WIFI_AUTH_WPA3_PSK;
             else if (strcmp(authmode->valuestring, "WPA2/WPA3") == 0)
                 auth_mode = WIFI_AUTH_WPA2_WPA3_PSK;
-            else
-            {
-                ESP_LOGW(TAG, "Unknown authmode '%s', defaulting to OPEN", authmode->valuestring);
-                auth_mode = WIFI_AUTH_OPEN;
-            }
+        }
+        else
+        {
+            // Если authmode не указан, используем OPEN
+            auth_mode = WIFI_AUTH_OPEN;
         }
 
         if (cJSON_IsString(password) && password->valuestring != NULL)
@@ -525,7 +556,7 @@ esp_err_t wifi_module_target(cJSON *json)
 
         return ESP_OK;
     }
-    else if (strcmp(action->valuestring, "disconnect_ap_attempt") == 0)
+    else if (strcmp(action->valuestring, "ap_disconnect") == 0)
     {
         esp_err_t err = dw_station_stop();
 
@@ -533,15 +564,15 @@ esp_err_t wifi_module_target(cJSON *json)
         {
             dw_station_set_auto_reconnect(false);
             xEventGroupSetBits(captive_wifi_group, DISCONNECT_BY_USER);
-            send_response_json("response", "wifi", "disconnect_ap_success", NULL);
+            send_response_json("response", "wifi", "ap_disconnect_success", NULL);
         }
         else
         {
-            send_response_json("response", "wifi", "disconnect_ap_failed", NULL);
+            send_response_json("response", "wifi", "ap_disconnect_error", NULL);
             ESP_LOGE(TAG, "Station connect error: %s", esp_err_to_name(err));
         }
     }
-    else if (strcmp(action->valuestring, "load_connection_status") == 0)
+    else if (strcmp(action->valuestring, "ap_status") == 0)
     {
         char ssid_str[32] = {0};
         char ip_str[16] = {0};
@@ -567,13 +598,13 @@ esp_err_t wifi_module_target(cJSON *json)
         if (!response)
         {
             ESP_LOGE(TAG, "Failed to create response object");
-            send_response_json("response", "wifi", "load_connection_status_failed", "memory allocation failed");
+            send_response_json("response", "wifi", "ap_status_error", "memory allocation failed");
             return ESP_ERR_NO_MEM;
         }
 
         cJSON_AddStringToObject(response, "type", "response");
         cJSON_AddStringToObject(response, "target", "wifi");
-        cJSON_AddStringToObject(response, "status", "load_connection_status");
+        cJSON_AddStringToObject(response, "status", "ap_status");
 
         // Создаем объект данных
         cJSON *data_obj = cJSON_CreateObject();
@@ -645,13 +676,13 @@ esp_err_t wifi_module_target(cJSON *json)
         else
         {
             ESP_LOGE(TAG, "Failed to generate JSON string");
-            send_response_json("response", "wifi", "load_connection_status_failed", "json generation failed");
+            send_response_json("response", "wifi", "ap_status_error", "json generation failed");
         }
 
         // Освобождаем основной cJSON объект
         cJSON_Delete(response);
     }
-    else if (strcmp(action->valuestring, "load_ap_config") == 0)
+    else if (strcmp(action->valuestring, "ap_config") == 0)
     {
         cJSON *response = cJSON_CreateObject();
         if (!response)
@@ -675,7 +706,7 @@ esp_err_t wifi_module_target(cJSON *json)
         wifi_sta_config_t wifi_sta = {0};
         err = dwnvs_load_sta_config(&wifi_sta);
 
-        cJSON_AddStringToObject(response, "status", "load_ap_config");
+        cJSON_AddStringToObject(response, "status", "ap_config");
         cJSON *data_obj = cJSON_CreateObject();
 
         if (err == ESP_OK)
@@ -769,7 +800,7 @@ esp_err_t wifi_module_target(cJSON *json)
     }
     else
     {
-        send_response_json("response", "wifi", "error", "unknown action");
+        send_response_json("response", "wifi", "common_error", "unknown action");
         return ESP_ERR_INVALID_ARG;
     }
 

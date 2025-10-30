@@ -53,4 +53,5 @@ idf_component_register(
         esp_netif
         json
         mqtt
+        driver
 )

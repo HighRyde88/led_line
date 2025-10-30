@@ -69,6 +69,40 @@ esp_err_t network_module_target(cJSON *json)
             cJSON *netmask_obj = cJSON_GetObjectItemCaseSensitive(data_obj, "netmask");
             cJSON *gateway_obj = cJSON_GetObjectItemCaseSensitive(data_obj, "gateway");
 
+            // Проверим длину строк IP-адресов
+            if (ip_obj != NULL && cJSON_IsString(ip_obj) && ip_obj->valuestring != NULL)
+            {
+                size_t ip_len = strlen(ip_obj->valuestring);
+                if (ip_len > 15)
+                {
+                    ESP_LOGE(TAG, "IP address too long: %s", ip_obj->valuestring);
+                    send_response_json("response", "network", "error_partial", "IP address too long (max 15 chars)");
+                    return ESP_ERR_INVALID_ARG;
+                }
+            }
+
+            if (netmask_obj != NULL && cJSON_IsString(netmask_obj) && netmask_obj->valuestring != NULL)
+            {
+                size_t netmask_len = strlen(netmask_obj->valuestring);
+                if (netmask_len > 15)
+                {
+                    ESP_LOGE(TAG, "Netmask too long: %s", netmask_obj->valuestring);
+                    send_response_json("response", "network", "error_partial", "Netmask too long (max 15 chars)");
+                    return ESP_ERR_INVALID_ARG;
+                }
+            }
+
+            if (gateway_obj != NULL && cJSON_IsString(gateway_obj) && gateway_obj->valuestring != NULL)
+            {
+                size_t gateway_len = strlen(gateway_obj->valuestring);
+                if (gateway_len > 15)
+                {
+                    ESP_LOGE(TAG, "Gateway too long: %s", gateway_obj->valuestring);
+                    send_response_json("response", "network", "error_partial", "Gateway too long (max 15 chars)");
+                    return ESP_ERR_INVALID_ARG;
+                }
+            }
+
             if ((ip_obj != NULL && cJSON_IsString(ip_obj) && ip_obj->valuestring != NULL) &&
                 (netmask_obj != NULL && cJSON_IsString(netmask_obj) && netmask_obj->valuestring != NULL) &&
                 (gateway_obj != NULL && cJSON_IsString(gateway_obj) && gateway_obj->valuestring != NULL))

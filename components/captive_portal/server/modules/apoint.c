@@ -46,6 +46,13 @@ esp_err_t apoint_module_target(cJSON *json)
 
         if (cJSON_IsString(ssid_obj) && ssid_obj->valuestring != NULL)
         {
+            size_t ssid_len = strlen(ssid_obj->valuestring);
+            if (ssid_len > 31) // 32 байта, включая null-терминатор
+            {
+                ESP_LOGE(TAG, "SSID too long: %zu characters (max 31)", ssid_len);
+                send_response_json("response", "apoint", "error_partial", "\"SSID too long (max 31 characters)\"");
+                return ESP_ERR_INVALID_ARG;
+            }
             strncpy((char *)ap_config.ssid, ssid_obj->valuestring, sizeof(ap_config.ssid) - 1);
             ap_config.ssid[sizeof(ap_config.ssid) - 1] = '\0';
         }
@@ -58,6 +65,13 @@ esp_err_t apoint_module_target(cJSON *json)
 
         if (cJSON_IsString(passw_obj) && passw_obj->valuestring != NULL)
         {
+            size_t passw_len = strlen(passw_obj->valuestring);
+            if (passw_len > 63) // 64 байта, включая null-терминатор
+            {
+                ESP_LOGE(TAG, "Password too long: %zu characters (max 63)", passw_len);
+                send_response_json("response", "apoint", "error_partial", "\"Password too long (max 63 characters)\"");
+                return ESP_ERR_INVALID_ARG;
+            }
             strncpy((char *)ap_config.password, passw_obj->valuestring, sizeof(ap_config.password) - 1);
             ap_config.password[sizeof(ap_config.password) - 1] = '\0';
         }
@@ -104,12 +118,11 @@ esp_err_t apoint_module_target(cJSON *json)
 
         if (dwnvs_load_ap_config(&ap_config) == ESP_OK && ap_config.ssid[0] != '\0')
         {
-            cJSON_AddStringToObject(data_obj, "ssid", (char*)ap_config.ssid);
-            cJSON_AddStringToObject(data_obj, "password", (char*)ap_config.password);
+            cJSON_AddStringToObject(data_obj, "ssid", (char *)ap_config.ssid);
+            cJSON_AddStringToObject(data_obj, "password", (char *)ap_config.password);
         }
         else
         {
-
         }
 
         cJSON_AddItemToObject(response, "data", data_obj);

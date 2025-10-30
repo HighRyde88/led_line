@@ -65,13 +65,16 @@ class LedStripModule extends BaseSettingsModule {
       );
     },
     error_partial: (data) => {
+      let error_message = "❌ Ошибка сохранения";
+
+      if (error_message === "invalid ledpin provided") {
+        error_message = "❌ Неверный порт подключения";
+      } else if(error_message === "invalid lednum provided (must be > 0)"){
+        error_message = "❌ Неверное количество светодиодов";
+      }
+        
       this.callModule("control", "setSaveButtonState", false);
-      this.callModule(
-        "control",
-        "showSettingsStatus",
-        "error",
-        "❌ Ошибка сохранения"
-      );
+      this.callModule("control", "showSettingsStatus", "error", error_message);
     },
     load_partial: (data) => {
       const load_data = data?.data || {};

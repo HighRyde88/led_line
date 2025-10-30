@@ -156,13 +156,14 @@ class MqttModule extends BaseSettingsModule {
       );
     },
     error_partial: (data) => {
+      let error_message = "❌ Ошибка сохранения";
+
+      if (error_message === "invalid port provided (must be 1-65535)") {
+        error_message = "❌ Неверный порт подключения";
+      }
+
       this.callModule("control", "setSaveButtonState", false);
-      this.callModule(
-        "control",
-        "showSettingsStatus",
-        "error",
-        "❌ Ошибка сохранения"
-      );
+      this.callModule("control", "showSettingsStatus", "error", error_message);
     },
     load_partial: (data) => {
       const load_data = data?.data || {};

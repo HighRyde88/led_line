@@ -29,7 +29,7 @@ function initWebSocket() {
       try {
         const data = JSON.parse(event.data);
 
-        if (data.type === "event" && data.target === "system", data.status === "ws_ready") {
+        if (data.type === "event" && data.target === "system" && data.status === "ws_ready") {
           window.SettingsCore.callAllModulesAndSendWS("onAppStart");
           return;
         }
@@ -144,34 +144,6 @@ if (tabs.length > 0) {
     tab.addEventListener("click", () => activateTab(tab.dataset.tab))
   );
 }
-
-/*let startX = 0;
-document.body.addEventListener(
-  "touchstart",
-  (e) => {
-    startX = e.touches[0].clientX;
-  },
-  { passive: true }
-);
-
-document.body.addEventListener(
-  "touchend",
-  (e) => {
-    if (!startX) return;
-    const endX = e.changedTouches[0].clientX;
-    const diff = startX - endX;
-    if (Math.abs(diff) < 40) return;
-    const activeIndex = [...tabs].findIndex((t) =>
-      t.classList.contains("active")
-    );
-    const newIndex = diff > 0 ? activeIndex + 1 : activeIndex - 1;
-    if (newIndex >= 0 && newIndex < tabs.length) {
-      activateTab(tabs[newIndex].dataset.tab);
-    }
-    startX = 0;
-  },
-  { passive: true }
-);*/
 
 function activateTab(tabId) {
   tabs.forEach((t) => t.classList.remove("active"));

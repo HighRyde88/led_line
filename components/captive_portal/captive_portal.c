@@ -63,7 +63,7 @@ static esp_err_t access_point_start(const char *ssid, const char *password)
 
     ap_config.authmode = has_valid_password ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     ap_config.max_connection = 1;
-    ap_config.channel = 11;
+    ap_config.channel = 0;
     ap_config.ssid_hidden = 0;
     ap_config.beacon_interval = 100;
     

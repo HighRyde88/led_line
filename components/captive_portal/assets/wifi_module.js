@@ -113,6 +113,9 @@ class WifiModule extends BaseSettingsModule {
     this.showTimeoutTimer = null;
     this.webSocket = window.webSocket;
     this.wifiFSM = new FSM("idle", this.wifiTransitions, this.wifiCallbacks);
+
+    this.connectionColor = "rgba(80, 216, 98, 0.95)";
+    this.errorColor = "rgba(216, 100, 80, 0.96)";
   }
 
   getRoutes() {
@@ -127,7 +130,7 @@ class WifiModule extends BaseSettingsModule {
     return {
       type: "request",
       target: "wifi",
-      action: "load_ap_config",
+      action: "ap_config",
     };
   }
 
@@ -138,31 +141,36 @@ class WifiModule extends BaseSettingsModule {
 
     this.connectBtn?.addEventListener("click", (e) => {
       e.preventDefault();
-
+      this.hideConnectionInfo();
       if (this.connectBtn.classList.contains("disconnect")) {
         if (confirm("Отключиться от сети?")) {
           this.wifiFSM.transition("ap_disconnect");
         }
       } else {
-        this.wifiFSM.transition("ap_connect");
+        const ssidEl = document.getElementById("ssid-select");
+        const ssid = ssidEl?.value || "";
+        const password = this.password?.value || "";
+        if (!ssid) {
+          alert("Выберите или введите SSID");
+          return;
+        }
+        this.wifiFSM.transition("ap_connect", {
+          ssid: ssid,
+          password: password,
+        });
       }
     });
-
-    return;
 
     this.toggle?.addEventListener("click", () =>
       this.toggleInputVisibility(this.password, this.toggle)
     );
     this.manualSsidBtn?.addEventListener("click", () => this.toggleSsidInput());
-    this.connectBtn?.addEventListener("click", (e) => {
-      e.preventDefault();
-      this.handleConnectClick();
-    });
+
     this.standaloneToggle?.addEventListener("change", (e) => {
       this.blockUi(e.target.checked);
       this.connectBtn.disabled = e.target.checked;
 
-      this.sendWS({
+      this.webSocketSend({
         type: "request",
         target: "wifi",
         action: "save_partial",
@@ -184,22 +192,24 @@ class WifiModule extends BaseSettingsModule {
 
   //===========================================================================================
   wifiTransitions = {
-    idle: ["ap_scan", "ac_connect", "ap_disconnect"],
+    idle: ["ap_scan", "ap_connect", "ap_disconnect", "ap_disconnected"],
     ap_scan: ["ap_scan_error", "idle"],
     ap_scan_error: ["idle"],
 
-    ac_connect: ["ap_wait_ip", "ap_disconnect", "ap_connect_error"],
-    ap_wait_ip: ["ap_check_eth", "ap_connect_error"],
-    ap_check_eth: ["ap_connect_success", "ap_connect_error"],
+    ap_connect: ["ap_wait_ip", "ap_disconnected", "ap_connect_error", "idle"], // Подключение
+    ap_disconnect: ["ap_disconnect_error", "idle"],
+    ap_wait_ip: ["ap_check_eth", "ap_connect_error", "idle"], // Ожидание ip
+    ap_check_eth: ["ap_connected", "ap_connect_error", "idle"], // Проверка соединения
 
-    ap_connect_success: ["idle"],
-    ap_disconnect: ["idle"],
+    ap_connected: ["idle"], // Завершение подключения
+    ap_disconnected: ["idle"],
     ap_connect_error: ["idle"],
   };
 
   wifiCallbacks = {
     idle: (data) => {
       uiLoader.hide();
+      clearTimeout(this.showTimeoutTimer);
     },
     ap_scan: (data) => {
       if (
@@ -225,6 +235,134 @@ class WifiModule extends BaseSettingsModule {
       }, 2000);
     },
     //=====================================
+    ap_connect: (data) => {
+      const credentials = data || null;
+      if (
+        credentials &&
+        this.webSocketSend({
+          type: "request",
+          target: "wifi",
+          action: "ap_connect",
+          data: credentials,
+        })
+      ) {
+        uiLoader.show("connecting", "Подключение...", this.connectionColor);
+        this.showTimeoutTimer = setTimeout(() => {
+          uiLoader.show("connecting", "Неизвестная ошибка.", this.errorColor);
+          console.log("Таймаут подключения.");
+          setTimeout(() => {
+            this.wifiFSM.transition("idle");
+          }, 2000);
+        }, 15000);
+      } else {
+        this.wifiFSM.transition("idle");
+      }
+    },
+    ap_disconnect: (data) => {
+      this.webSocketSend({
+        type: "request",
+        target: "wifi",
+        action: "ap_disconnect",
+      });
+      this.showTimeoutTimer = setTimeout(() => {
+        this.wifiFSM.transition("idle");
+      });
+    },
+    ap_wait_ip: (data) => {
+      clearTimeout(this.showTimeoutTimer);
+      uiLoader.show(
+        "connecting",
+        "Ожидание IP адреса...",
+        this.connectionColor
+      );
+      this.showTimeoutTimer = setTimeout(() => {
+        uiLoader.show("connecting", "Неизвестная ошибка.", this.errorColor);
+        console.log("Таймаут ожидания IP.");
+        setTimeout(() => {
+          this.wifiFSM.transition("idle");
+        }, 2000);
+      }, 15000);
+    },
+    ap_check_eth: (data) => {
+      clearTimeout(this.showTimeoutTimer);
+      if (
+        this.webSocketSend({
+          type: "request",
+          target: "wifi",
+          action: "ap_status",
+        })
+      ) {
+        uiLoader.show(
+          "connecting",
+          "Проверка соединения...",
+          this.connectionColor
+        );
+        this.showTimeoutTimer = setTimeout(() => {
+          uiLoader.show("connecting", "Неизвестная ошибка.", this.errorColor);
+          console.log("Таймаут проверки соединения.");
+          setTimeout(() => {
+            this.wifiFSM.transition("idle");
+          }, 2000);
+        }, 15000);
+      } else {
+        this.wifiFSM.transition("idle");
+      }
+    },
+    ap_connect_error: (data) => {
+      console.log(data);
+      clearTimeout(this.showTimeoutTimer);
+      uiLoader.show("connecting", "Ошибка сервера.", this.errorColor);
+      setTimeout(() => {
+        this.wifiFSM.transition("idle");
+      }, 2000);
+    },
+    ap_disconnected: (data) => {
+      console.log(data);
+      clearTimeout(this.showTimeoutTimer);
+      this.blockUi(false);
+      this.blockSlandstone(false);
+      this.buttonConnectionRole("connected");
+
+      const reasonCode = data.data?.reason;
+
+      if (reasonCode != 1) {
+        const reason = this.getWiFiErrorMessage(reasonCode);
+        uiLoader.show("connecting", reason, this.errorColor);
+        setTimeout(() => {
+          uiLoader.hide();
+          this.wifiFSM.transition("idle");
+        }, 2000);
+        return;
+      }
+
+      this.wifiFSM.transition("idle");
+    },
+    ap_connected: (data) => {
+      clearTimeout(this.showTimeoutTimer);
+      this.blockUi(true);
+      this.blockSlandstone(true);
+      this.buttonConnectionRole("disconnect");
+
+      const { connect, version } = data;
+
+      this.callModule(
+        "network",
+        "setNetworkValue",
+        connect.ip,
+        connect.netmask,
+        connect.gateway
+      );
+
+      const text_status = connect.ethernet
+        ? "Доступ в интернет есть..."
+        : "Доступ в интернет отсутствует...";
+
+      uiLoader.show("connecting", text_status, this.connectionColor);
+      setTimeout(() => {
+        uiLoader.hide();
+        this.wifiFSM.transition("idle");
+      }, 2000);
+    },
   };
   //===========================================================================================
   handleResponse(data) {
@@ -259,142 +397,19 @@ class WifiModule extends BaseSettingsModule {
       this.wifiFSM.transition("idle");
     },
     //=====================================
-  };
+    ap_connect_ok: (data) => {},
+    ap_status: (data) => {
+      const ap_status = data.data;
 
-  eventHandlerss = {
-    ap_scan_success: (data) => {
-      const ap_count = data.data?.count || 0;
-      if (ap_count > 0) {
-        if (
-          !this.webSocketSend({
-            type: "request",
-            target: "wifi",
-            action: "ap_scan_result",
-          })
-        ) {
-          this.wifiFSM.transition("ap_scan_error");
-        }
-      } else {
-        this.wifiFSM.transition("idle");
-      }
+      if (this.standaloneToggle) this.standaloneToggle.checked = false;
+
+      this.updateStatus(ap_status);
+
+      const connect = ap_status;
+
+      this.wifiFSM.transition("ap_connected", connect);
     },
-    //=====================================
-  };
-
-  //===========================================================================================
-
-  handleConnectClick() {
-    if (this.connectBtn.classList.contains("disconnect")) {
-      if (confirm("Отключиться от сети?")) {
-        this.isUserDisconnect = true;
-        this.sendWS({
-          type: "request",
-          target: "wifi",
-          action: "disconnect_ap_attempt",
-        });
-      }
-    } else {
-      const ssidEl = document.getElementById("ssid-select");
-      const ssid = ssidEl?.value || "";
-      const password = this.password?.value || "";
-      if (!ssid) {
-        alert("Выберите или введите SSID");
-        return;
-      }
-
-      this.startConnection(ssid, password);
-    }
-  }
-
-  startConnection(ssid, password) {
-    this.isUserDisconnect = false;
-
-    this.sendWS({
-      type: "request",
-      target: "wifi",
-      action: "connect_ap_attempt",
-      data: { ssid, password },
-    });
-
-    this.hideConnectionInfo();
-    this.showConnectingLoader("Попытка подключения...");
-    this.startConnectTimeout();
-  }
-
-  hideConnectionInfo() {
-    const infoText = this.connectionInfoText;
-    const info = document.querySelector(".connection-info");
-    if (infoText) infoText.value = "";
-    if (info) info.style.display = "none";
-  }
-
-  showConnectingLoader(message) {
-    uiLoader.show("connecting", message, "rgba(80, 216, 98, 0.95)");
-  }
-
-  startConnectTimeout() {
-    this.clearConnectTimeout();
-    this.connectTimeout = setTimeout(() => {
-      if (this.isConnecting) {
-        this.isConnecting = false;
-        this.showConnectingLoader("Таймаут подключения.");
-        setTimeout(() => uiLoader.hide(), 2000);
-      }
-    }, 25000);
-  }
-
-  clearConnectTimeout() {
-    if (this.connectTimeout) {
-      clearTimeout(this.connectTimeout);
-      this.connectTimeout = null;
-    }
-  }
-
-  responseHandlers = {
-    scan_ap_started: (data) => {
-      this.isScanning = true;
-      uiLoader.hide();
-      uiLoader.show("scanning", "Поиск сетей...", "rgba(77, 175, 231, 0.9)");
-      clearTimeout(this.scanTimeout);
-      this.scanTimeout = setTimeout(() => {
-        this.isScanning = false;
-        uiLoader.show("scanning", "Таймаут поиска", "rgba(226, 45, 45, 0.95)");
-        setTimeout(() => uiLoader.hide(), 1500);
-      }, 15000);
-    },
-
-    scan_ap_failed: (data) => {
-      this.isScanning = false;
-      clearTimeout(this.scanTimeout);
-      uiLoader.show(
-        "scanning",
-        "Ошибка сканирования..." + (data.data?.count || ""),
-        "rgba(226, 45, 45, 0.95)"
-      );
-      setTimeout(() => uiLoader.hide(), 1500);
-    },
-
-    scan_ap_results: (data) => {
-      if (data.data) this.displayScanResults(data.data.networks);
-    },
-
-    connect_ap_trying: () => {
-      // Таймаут уже установлен в startConnection
-    },
-
-    connect_ap_failed: () => {
-      this.clearConnectTimeout();
-      uiLoader.show(
-        "connecting",
-        "Ошибка подключения",
-        "rgba(219, 77, 77, 0.95)"
-      );
-      setTimeout(() => uiLoader.hide(), 2000);
-    },
-
-    disconnect_ap_success: () => {},
-
-    load_ap_config: (data) => {
+    ap_config: (data) => {
       const current = document.getElementById("ssid-select");
       if (
         current &&
@@ -420,93 +435,49 @@ class WifiModule extends BaseSettingsModule {
         this.blockUi(standalone);
       }
     },
-
-    load_connection_status: (data) => {
-      const connection_status = data.data;
-      this.blockUi(true);
-
-      this.blockSlandstone(true);
-      if (this.standaloneToggle) this.standaloneToggle.checked = false;
-
-      if (connection_status) {
-        this.updateStatus(connection_status);
-
-        const { connect } = connection_status;
-
-        this.callModule(
-          "network",
-          "setNetworkValue",
-          connect.ip,
-          connect.netmask,
-          connect.gateway
-        );
-
-        const text_status = connect.ethernet
-          ? "Доступ в интернет есть..."
-          : "Доступ в интернет отсутствует...";
-
-        uiLoader.show("connecting", text_status, "rgba(80, 216, 98, 0.95)");
-        setTimeout(() => {
-          uiLoader.hide();
-        }, 1000);
-      }
+    //=====================================
+    ap_connect_error: (data) => {
+      this.wifiFSM.transition("ap_connect_error", data);
+    },
+    common_error: (data) => {
+      this.wifiFSM.transition("ap_connect_error", data);
     },
   };
 
-  eventHandlers = {
-    scan_ap_completed: (data) => {
-      this.isScanning = false;
-      clearTimeout(this.scanTimeout);
-      const scan_result = data.data;
-      if (scan_result.count > 0) {
-        setTimeout(() => {
-          this.sendWS({
+  eventHandlerss = {
+    ap_scan_success: (data) => {
+      const ap_count = data.data?.count || 0;
+      if (ap_count > 0) {
+        if (
+          !this.webSocketSend({
             type: "request",
             target: "wifi",
-            action: "scan_ap_results",
-          });
-        }, 100);
+            action: "ap_scan_result",
+          })
+        ) {
+          this.wifiFSM.transition("ap_scan_error");
+        }
       } else {
-        uiLoader.show(
-          "scanning",
-          "Сети не найдены!" + scan_result.count,
-          "rgba(252, 143, 18, 0.9)"
-        );
+        this.wifiFSM.transition("idle");
       }
-      setTimeout(() => uiLoader.hide(), 500);
+    },
+    //=====================================
+    ap_disconnected_from_reason: (data) => {
+      this.updateStatus(null);
+      this.wifiFSM.transition("ap_disconnected", data);
+    },
+    ap_wait_ip: (data) => {
+      this.wifiFSM.transition("ap_wait_ip");
+    },
+    ap_got_ip: (data) => {
+      this.wifiFSM.transition("ap_check_eth");
     },
 
-    connection_ap_success: (data) => {
-      uiLoader.show(
-        "connecting",
-        "Получение IP адреса...",
-        "rgba(80, 216, 98, 0.95)"
-      );
-    },
+    //=====================================
+  };
 
-    connection_ap_got_ip: (data) => {
-      setTimeout(() => {
-        this.isConnecting = false;
-        this.clearConnectTimeout();
-        this.sendWS({
-          type: "request",
-          target: "wifi",
-          action: "load_connection_status",
-        });
-        this.buttonConnectionRole("disconnect");
-        if (this.password) this.password.value = "";
-
-        uiLoader.show(
-          "connecting",
-          "Проверка сети...",
-          "rgba(80, 216, 98, 0.95)"
-        );
-      }, 500);
-    },
-
+  /*
     disconnected_ap_from_reason: (data) => {
-      this.isConnecting = false;
-      this.clearConnectTimeout();
 
       const reasonCode = data.data?.reason;
       if (reasonCode != 1) {
@@ -520,7 +491,15 @@ class WifiModule extends BaseSettingsModule {
       this.blockSlandstone(false);
       this.updateStatus(null);
     },
-  };
+ */
+
+  //===========================================================================================
+  hideConnectionInfo() {
+    const infoText = this.connectionInfoText;
+    const info = document.querySelector(".connection-info");
+    if (infoText) infoText.value = "";
+    if (info) info.style.display = "none";
+  }
 
   buttonConnectionRole(role) {
     if (role === "connect") {
@@ -700,11 +679,11 @@ class WifiModule extends BaseSettingsModule {
     for (const [group, codes] of Object.entries(map)) {
       if (codes.includes(code))
         return {
-          SECURITY: "Неверный пароль",
-          NOT_FOUND: "Не удалось подключиться",
+          SECURITY: "Неверный пароль.",
+          NOT_FOUND: "Не удалось подключиться.",
         }[group];
     }
-    return "Не удалось подключиться";
+    return "Не удалось подключиться. Повторите попытку.";
   }
 
   blockUi(state) {
@@ -723,10 +702,6 @@ class WifiModule extends BaseSettingsModule {
 
     if (state) standaloneElement.classList.add("disabled");
     else standaloneElement.classList.remove("disabled");
-  }
-
-  sendWS(data) {
-    if (window.sendWS) window.sendWS(data);
   }
 
   destroy() {
