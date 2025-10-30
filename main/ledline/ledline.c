@@ -5,12 +5,12 @@ uint32_t leds_num = 0;
 
 static const char *TAG = "led_strip";
 //=================================================================
-static led_strip_handle_t ledline_create(uint32_t lednum)
+static led_strip_handle_t ledline_create(uint32_t lednum, uint32_t ledpin)
 {
     ESP_LOGI(TAG, "Creating LED strip with %d LEDs", lednum);
 
     led_strip_config_t strip_config = {
-        .strip_gpio_num = LED_STRIP_GPIO_PIN,
+        .strip_gpio_num = ledpin,
         .max_leds = lednum,
         .led_model = LED_MODEL_WS2812,
 
@@ -68,12 +68,18 @@ esp_err_t ledline_resources_init(void)
 {
     ESP_LOGI(TAG, "Initializing LED strip resources...");
 
-    char lednum_str[16] = {0};
-    size_t str_size = sizeof(lednum_str);
-    esp_err_t result = nvs_load_data("ledstrip", "lednum", lednum_str, &str_size, NVS_TYPE_STR);
-
     uint32_t lednum = 60;
-    if (result == ESP_OK && str_size > 0 && lednum_str[0] != '\0')
+    uint32_t ledpin = GPIO_NUM_27;
+
+    char lednum_str[8] = {0};
+    char ledpin_str[8] = {0};
+
+    size_t lednum_size = sizeof(lednum_str);
+    size_t ledpin_size = sizeof(ledpin_str);
+
+    esp_err_t result = nvs_load_data("ledstrip", "lednum", lednum_str, &lednum_size, NVS_TYPE_STR);
+
+    if (result == ESP_OK && lednum_size > 0 && lednum_str[0] != '\0')
     {
         lednum = atoi(lednum_str);
         ESP_LOGI(TAG, "Loaded LED count from NVS: %d", lednum);
@@ -83,8 +89,22 @@ esp_err_t ledline_resources_init(void)
         ESP_LOGI(TAG, "Using default LED count: %d", lednum);
     }
 
+    result = nvs_load_data("ledstrip", "ledpin", ledpin_str, &ledpin_size, NVS_TYPE_STR);
+
+    if (result == ESP_OK && ledpin_size > 0 && ledpin_str[0] != '\0')
+    {
+        ledpin = atoi(ledpin_str);
+        ESP_LOGI(TAG, "Loaded LED pin from NVS: %d", ledpin);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Using default LED pin: %d", ledpin);
+    }
+
     leds_num = lednum;
-    led_strip = ledline_create(leds_num);
+
+
+    led_strip = ledline_create(leds_num, ledpin);
     if (led_strip == NULL)
     {
         ESP_LOGE(TAG, "Failed to create LED strip with %d LEDs", lednum);

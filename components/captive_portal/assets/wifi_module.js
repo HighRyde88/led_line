@@ -136,6 +136,18 @@ class WifiModule extends BaseSettingsModule {
       this.wifiFSM.transition("ap_scan");
     });
 
+    this.connectBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+
+      if (this.connectBtn.classList.contains("disconnect")) {
+        if (confirm("Отключиться от сети?")) {
+          this.wifiFSM.transition("ap_disconnect");
+        }
+      } else {
+        this.wifiFSM.transition("ap_connect");
+      }
+    });
+
     return;
 
     this.toggle?.addEventListener("click", () =>
@@ -172,9 +184,17 @@ class WifiModule extends BaseSettingsModule {
 
   //===========================================================================================
   wifiTransitions = {
-    idle: ["ap_scan"],
+    idle: ["ap_scan", "ac_connect", "ap_disconnect"],
     ap_scan: ["ap_scan_error", "idle"],
     ap_scan_error: ["idle"],
+
+    ac_connect: ["ap_wait_ip", "ap_disconnect", "ap_connect_error"],
+    ap_wait_ip: ["ap_check_eth", "ap_connect_error"],
+    ap_check_eth: ["ap_connect_success", "ap_connect_error"],
+
+    ap_connect_success: ["idle"],
+    ap_disconnect: ["idle"],
+    ap_connect_error: ["idle"],
   };
 
   wifiCallbacks = {
@@ -204,6 +224,7 @@ class WifiModule extends BaseSettingsModule {
         this.wifiFSM.transition("idle");
       }, 2000);
     },
+    //=====================================
   };
   //===========================================================================================
   handleResponse(data) {
@@ -237,6 +258,7 @@ class WifiModule extends BaseSettingsModule {
       }
       this.wifiFSM.transition("idle");
     },
+    //=====================================
   };
 
   eventHandlerss = {
@@ -256,6 +278,7 @@ class WifiModule extends BaseSettingsModule {
         this.wifiFSM.transition("idle");
       }
     },
+    //=====================================
   };
 
   //===========================================================================================
