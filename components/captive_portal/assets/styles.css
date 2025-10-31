@@ -1193,6 +1193,7 @@ select#ssid-select + .select-wrapper::after {
 .toggle-group.disabled
 {
   opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .toggle-group label

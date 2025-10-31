@@ -151,7 +151,7 @@ class ControlModule extends BaseSettingsModule {
   // === Управление системными действиями ===
   handleResetClick() {
     if (confirm("Сбросить настройки? Устройство перезагрузится.")) {
-      uiLoader.show("processing", "Сброс системы...", "#6d5179");
+      uiLoader.show("processing", "Сброс системы...", "rgba(240, 53, 193, 0.9))");
       this.sendWS({
         type: "request",
         target: "control",
@@ -162,7 +162,7 @@ class ControlModule extends BaseSettingsModule {
 
   handleRebootClick() {
     if (confirm("Перезагрузить устройство?")) {
-      uiLoader.show("waiting", "Перезагрузка...", "#aac549b9");
+      uiLoader.show("waiting", "Перезагрузка...", "rgba(53, 240, 209, 0.95)");
       this.sendWS({
         type: "request",
         target: "control",
@@ -173,7 +173,7 @@ class ControlModule extends BaseSettingsModule {
 
   handleLogoutClick() {
     if (confirm("Выйти из панели управления?")) {
-      uiLoader.show("waiting", "Выход...", "#aac549b9");
+      uiLoader.show("waiting", "Выход...", "rgba(240, 175, 53, 0.95)");
       this.sendWS({
         type: "request",
         target: "control",

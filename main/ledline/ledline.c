@@ -1,5 +1,6 @@
 #include "ledline.h"
 #include "driver/gpio.h"
+#include "effects_ledline.h"
 
 led_strip_handle_t led_strip = NULL;
 uint32_t leds_num = 0;
@@ -114,12 +115,15 @@ esp_err_t ledline_resources_init(void)
 
     leds_num = lednum;
 
+    
     led_strip = ledline_create(leds_num, ledpin);
     if (led_strip == NULL)
     {
         ESP_LOGE(TAG, "Failed to create LED strip with %d LEDs", lednum);
         return ESP_FAIL;
     }
+
+    start_effects_ledline();
 
     ESP_LOGI(TAG, "LED strip resources initialized successfully with %d LEDs", lednum);
     return ESP_OK;

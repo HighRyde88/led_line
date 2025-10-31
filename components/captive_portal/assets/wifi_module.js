@@ -1,59 +1,25 @@
 class FSM {
-  /**
-   * @param {string} initialState - начальное состояние
-   * @param {Object} transitions - объект с правилами переходов
-   * @param {Object} callbacks - объект с callback-ами для каждого состояния
-   *
-   * Пример:
-   * {
-   *   idle: ['connecting'],
-   *   connecting: ['getting_ip', 'failed'],
-   *   getting_ip: ['connected', 'failed'],
-   *   connected: ['idle'],
-   *   failed: ['idle']
-   * }
-   *
-   * callbacks:
-   * {
-   *   idle: (data) => console.log('idle', data),
-   *   connecting: (data) => console.log('connecting', data),
-   *   ...
-   * }
-   */
   constructor(initialState, transitions, callbacks = {}) {
     this.state = initialState;
     this.transitions = transitions || {};
     this.callbacks = callbacks || {};
   }
 
-  /**
-   * Проверяет, можно ли перейти в состояние `to`
-   * @param {string} to - целевое состояние
-   * @returns {boolean}
-   */
   canTransition(to) {
     const allowed = this.transitions[this.state];
     return Array.isArray(allowed) && allowed.includes(to);
   }
 
-  /**
-   * Пытается перейти в состояние `to`
-   * @param {string} to - целевое состояние
-   * @param {*} data - данные, передаваемые в callback
-   * @returns {boolean} - true, если переход успешен
-   */
   transition(to, data) {
     if (this.canTransition(to)) {
       const from = this.state;
       this.state = to;
 
-      // Вызываем callback для нового состояния
       const callback = this.callbacks[to];
       if (typeof callback === "function") {
         callback(data, from, to);
       }
 
-      // Вызываем общий обработчик
       this.onStateChange && this.onStateChange(from, to, data);
 
       return true;
@@ -62,32 +28,32 @@ class FSM {
     return false;
   }
 
-  /**
-   * Устанавливает обработчик изменения состояния
-   * @param {Function} callback - (from, to, data) => {}
-   */
   onChange(callback) {
     this.onStateChange = callback;
   }
 
-  /**
-   * Устанавливает callback для конкретного состояния
-   * @param {string} state - состояние
-   * @param {Function} callback - (data, from, to) => {}
-   */
   onState(state, callback) {
     this.callbacks[state] = callback;
   }
 
-  /**
-   * Сбрасывает FSM в начальное состояние
-   */
   reset(initialState) {
     this.state = initialState || Object.keys(this.transitions)[0];
   }
 }
 
 class WifiModule extends BaseSettingsModule {
+  static COLORS = {
+    SUCCESS: "rgba(80, 216, 98, 0.95)",
+    ERROR: "rgba(216, 100, 80, 0.96)",
+    SCANNING: "rgba(77, 175, 231, 0.9)",
+    TIMEOUT: "rgba(240, 53, 53, 0.9)",
+  };
+
+  static TIMEOUTS = {
+    SCAN: 10000,
+    CONNECT: 15000,
+  };
+
   constructor() {
     super();
     this.standaloneToggle = document.getElementById("standalone-mode-toggle");
@@ -100,21 +66,12 @@ class WifiModule extends BaseSettingsModule {
     this.connectionInfoText = document.getElementById("connection-info-text");
     this.ethernet_status = document.getElementById("ethernet-status");
 
-    this.isScanning = false;
-    this.isConnecting = false;
-    this.scanTimeout = null;
-    this.connectTimeout = null;
-
     this.lastScanResults = [];
-    this.isUserDisconnect = false;
     this.lastManualSsid = "";
 
     this.showTimeoutTimer = null;
     this.webSocket = window.webSocket;
     this.wifiFSM = new FSM("idle", this.wifiTransitions, this.wifiCallbacks);
-
-    this.connectionColor = "rgba(80, 216, 98, 0.95)";
-    this.errorColor = "rgba(216, 100, 80, 0.96)";
   }
 
   getRoutes() {
@@ -184,81 +141,66 @@ class WifiModule extends BaseSettingsModule {
     try {
       this.webSocket.send(JSON.stringify(data));
       return true;
-    } catch {
+    } catch (error) {
+      console.error("WebSocket send error:", error);
       return false;
     }
   }
 
-  //===========================================================================================
   wifiTransitions = {
     idle: ["ap_scan", "ap_connect", "ap_disconnect", "ap_disconnected"],
     ap_scan: ["ap_scan_error", "idle"],
     ap_scan_error: ["idle"],
-
-    ap_connect: ["ap_wait_ip", "ap_disconnected", "ap_connect_error", "idle"], // Подключение
+    ap_connect: ["ap_wait_ip", "ap_disconnected", "ap_connect_error", "idle"],
     ap_disconnect: ["ap_disconnect_error", "idle"],
-    ap_wait_ip: ["ap_check_eth", "ap_connect_error", "idle"], // Ожидание ip
-    ap_check_eth: ["ap_connected", "ap_connect_error", "idle"], // Проверка соединения
-
-    ap_connected: ["idle"], // Завершение подключения
+    ap_wait_ip: ["ap_check_eth", "ap_connect_error", "idle"],
+    ap_check_eth: ["ap_connected", "ap_connect_error", "idle"],
+    ap_connected: ["idle"],
     ap_disconnected: ["idle"],
     ap_connect_error: ["idle"],
   };
 
   wifiCallbacks = {
-    idle: (data) => {
+    idle: () => {
       uiLoader.hide();
       clearTimeout(this.showTimeoutTimer);
     },
-    ap_scan: (data) => {
-      if (
-        this.webSocketSend({
-          type: "request",
-          target: "wifi",
-          action: "ap_scan_start",
-        })
-      ) {
+    ap_scan: () => {
+      if (this.webSocketSend({
+        type: "request",
+        target: "wifi",
+        action: "ap_scan_start",
+      })) {
         this.password.value = "";
-        uiLoader.show("scanning", "Поиск сетей...", "rgba(77, 175, 231, 0.9)");
-
+        uiLoader.show("scanning", "Поиск сетей...", WifiModule.COLORS.SCANNING);
         this.showTimeoutTimer = setTimeout(() => {
           this.wifiFSM.transition("ap_scan_error");
-        }, 10000);
+        }, WifiModule.TIMEOUTS.SCAN);
       } else {
         this.wifiFSM.transition("ap_scan_error");
       }
     },
-    ap_scan_error: (data) => {
-      uiLoader.show("scanning", "Ошибка поиска...", "rgba(240, 53, 53, 0.9)");
-      setTimeout(() => {
-        this.wifiFSM.transition("idle");
-      }, 2000);
+    ap_scan_error: () => {
+      this.showError("Ошибка поиска...", () => this.wifiFSM.transition("idle"));
     },
-    //=====================================
     ap_connect: (data) => {
       const credentials = data || null;
-      if (
-        credentials &&
-        this.webSocketSend({
-          type: "request",
-          target: "wifi",
-          action: "ap_connect",
-          data: credentials,
-        })
-      ) {
-        uiLoader.show("connecting", "Подключение...", this.connectionColor);
+      if (credentials && this.webSocketSend({
+        type: "request",
+        target: "wifi",
+        action: "ap_connect",
+        data: credentials,
+      })) {
+        uiLoader.show("connecting", "Подключение...", WifiModule.COLORS.SUCCESS);
         this.showTimeoutTimer = setTimeout(() => {
-          uiLoader.show("connecting", "Неизвестная ошибка.", this.errorColor);
+          this.showError("Неизвестная ошибка.", () => this.wifiFSM.transition("idle"));
           console.log("Таймаут подключения.");
-          setTimeout(() => {
-            this.wifiFSM.transition("idle");
-          }, 2000);
-        }, 15000);
+        }, WifiModule.TIMEOUTS.CONNECT);
       } else {
         this.wifiFSM.transition("idle");
       }
     },
-    ap_disconnect: (data) => {
+    ap_disconnect: () => {
       this.webSocketSend({
         type: "request",
         target: "wifi",
@@ -268,70 +210,35 @@ class WifiModule extends BaseSettingsModule {
         this.wifiFSM.transition("idle");
       });
     },
-    ap_wait_ip: (data) => {
+    ap_wait_ip: () => {
       clearTimeout(this.showTimeoutTimer);
-      uiLoader.show(
-        "connecting",
-        "Ожидание IP адреса...",
-        this.connectionColor
-      );
+      uiLoader.show("connecting", "Ожидание IP адреса...", WifiModule.COLORS.SUCCESS);
       this.showTimeoutTimer = setTimeout(() => {
-        uiLoader.show("connecting", "Неизвестная ошибка.", this.errorColor);
+        this.showError("Неизвестная ошибка.", () => this.wifiFSM.transition("idle"));
         console.log("Таймаут ожидания IP.");
-        setTimeout(() => {
-          this.wifiFSM.transition("idle");
-        }, 2000);
-      }, 15000);
+      }, WifiModule.TIMEOUTS.CONNECT);
     },
-    ap_check_eth: (data) => {
+    ap_check_eth: () => {
       clearTimeout(this.showTimeoutTimer);
-      if (
-        this.webSocketSend({
-          type: "request",
-          target: "wifi",
-          action: "ap_status",
-        })
-      ) {
-        uiLoader.show(
-          "connecting",
-          "Проверка соединения...",
-          this.connectionColor
-        );
-        this.showTimeoutTimer = setTimeout(() => {
-          uiLoader.show("connecting", "Неизвестная ошибка.", this.errorColor);
-          console.log("Таймаут проверки соединения.");
-          setTimeout(() => {
-            this.wifiFSM.transition("idle");
-          }, 2000);
-        }, 15000);
-      } else {
-        this.wifiFSM.transition("idle");
-      }
+      uiLoader.show("connecting", "Проверка соединения...", WifiModule.COLORS.SUCCESS);
+      this.showTimeoutTimer = setTimeout(() => {
+        this.showError("Неизвестная ошибка.", () => this.wifiFSM.transition("idle"));
+        console.log("Таймаут проверки соединения.");
+      }, WifiModule.TIMEOUTS.CONNECT);
     },
-    ap_connect_error: (data) => {
-      console.log(data);
-      clearTimeout(this.showTimeoutTimer);
-      uiLoader.show("connecting", "Ошибка сервера.", this.errorColor);
-      setTimeout(() => {
-        this.wifiFSM.transition("idle");
-      }, 2000);
+    ap_connect_error: () => {
+      this.showError("Ошибка сервера.", () => this.wifiFSM.transition("idle"));
     },
     ap_disconnected: (data) => {
-      console.log(data);
       clearTimeout(this.showTimeoutTimer);
       this.blockUi(false);
       this.blockSlandstone(false);
       this.buttonConnectionRole("connected");
 
       const reasonCode = data.data?.reason;
-
       if (reasonCode != 1) {
         const reason = this.getWiFiErrorMessage(reasonCode);
-        uiLoader.show("connecting", reason, this.errorColor);
-        setTimeout(() => {
-          uiLoader.hide();
-          this.wifiFSM.transition("idle");
-        }, 2000);
+        this.showError(reason, () => this.wifiFSM.transition("idle"));
         return;
       }
 
@@ -343,29 +250,41 @@ class WifiModule extends BaseSettingsModule {
       this.blockSlandstone(true);
       this.buttonConnectionRole("disconnect");
 
-      const { connect, version } = data;
-
-      this.callModule(
-        "network",
-        "setNetworkValue",
-        connect.ip,
-        connect.netmask,
-        connect.gateway
-      );
-
-      const text_status = connect.ethernet
-        ? "Доступ в интернет есть..."
-        : "Доступ в интернет отсутствует...";
-
-      uiLoader.show("connecting", text_status, this.connectionColor);
-      setTimeout(() => {
-        uiLoader.hide();
-        this.wifiFSM.transition("idle");
-      }, 2000);
+      this.onConnected(data);
     },
   };
-  //===========================================================================================
+
+  showError(message, nextStateCallback) {
+    uiLoader.show("connecting", message, WifiModule.COLORS.ERROR);
+    setTimeout(() => {
+      uiLoader.hide();
+      nextStateCallback();
+    }, 2000);
+  }
+
+  onConnected(data) {
+    this.callModule(
+      "network",
+      "setNetworkValue",
+      data.ip,
+      data.netmask,
+      data.gateway
+    );
+
+    const text_status = data.ethernet
+      ? "Доступ в интернет есть..."
+      : "Доступ в интернет отсутствует...";
+
+    uiLoader.show("connecting", text_status, WifiModule.COLORS.SUCCESS);
+    setTimeout(() => {
+      uiLoader.hide();
+      this.wifiFSM.transition("idle");
+    }, 2000);
+  }
+
   handleResponse(data) {
+    if (!this.isValidStatus(data.status)) return;
+
     const handler = this.responseHandlers[data.status];
     if (handler) {
       handler.call(this, data);
@@ -373,21 +292,23 @@ class WifiModule extends BaseSettingsModule {
   }
 
   handleEvent(data) {
+    if (!this.isValidStatus(data.status)) return;
+
     const handler = this.eventHandlers[data.status];
     if (handler) {
       handler.call(this, data);
     }
   }
 
+  isValidStatus(status) {
+    const valid = [
+      ...Object.keys(this.responseHandlers),
+      ...Object.keys(this.eventHandlers)
+    ];
+    return valid.includes(status);
+  }
+
   responseHandlers = {
-    ap_scan_started: (data) => {},
-    ap_scan_already: (data) => {
-      clearTimeout(this.showTimeoutTimer);
-    },
-    ap_scan_error: (data) => {
-      clearTimeout(this.showTimeoutTimer);
-      this.wifiFSM.transition("ap_scan_error");
-    },
     ap_scan_result: (data) => {
       clearTimeout(this.showTimeoutTimer);
       const networks = data.data?.networks || null;
@@ -396,25 +317,9 @@ class WifiModule extends BaseSettingsModule {
       }
       this.wifiFSM.transition("idle");
     },
-    //=====================================
-    ap_connect_ok: (data) => {},
-    ap_status: (data) => {
-      const status = data.data;
-
-      if (this.standaloneToggle) this.standaloneToggle.checked = false;
-
-      this.updateStatus(status);
-      
-      this.wifiFSM.transition("ap_connected", status.connect);
-    },
     ap_config: (data) => {
       const current = document.getElementById("ssid-select");
-      if (
-        current &&
-        data.data.ssid &&
-        data.data.password &&
-        data.data.standalone
-      ) {
+      if (current && data.data.ssid && data.data.password && data.data.standalone) {
         const input = this.createSsidInput();
         input.value = data.data.ssid || "";
         this.password.value = data.data.password || "";
@@ -433,7 +338,6 @@ class WifiModule extends BaseSettingsModule {
         this.blockUi(standalone);
       }
     },
-    //=====================================
     ap_connect_error: (data) => {
       this.wifiFSM.transition("ap_connect_error", data);
     },
@@ -446,52 +350,38 @@ class WifiModule extends BaseSettingsModule {
     ap_scan_success: (data) => {
       const ap_count = data.data?.count || 0;
       if (ap_count > 0) {
-        if (
-          !this.webSocketSend({
-            type: "request",
-            target: "wifi",
-            action: "ap_scan_result",
-          })
-        ) {
+        if (!this.webSocketSend({
+          type: "request",
+          target: "wifi",
+          action: "ap_scan_result",
+        })) {
           this.wifiFSM.transition("ap_scan_error");
         }
       } else {
         this.wifiFSM.transition("idle");
       }
     },
-    //=====================================
     ap_disconnected_from_reason: (data) => {
       this.updateStatus(null);
       this.wifiFSM.transition("ap_disconnected", data);
     },
-    ap_wait_ip: (data) => {
+    ap_wait_ip: () => {
       this.wifiFSM.transition("ap_wait_ip");
     },
-    ap_got_ip: (data) => {
+    ap_got_ip: () => {
       this.wifiFSM.transition("ap_check_eth");
     },
+    ap_status: (data) => {
+      const status = data.data;
 
-    //=====================================
+      if (this.standaloneToggle) this.standaloneToggle.checked = false;
+
+      this.updateStatus(status);
+
+      this.wifiFSM.transition("ap_connected", status.connect);
+    },
   };
 
-  /*
-    disconnected_ap_from_reason: (data) => {
-
-      const reasonCode = data.data?.reason;
-      if (reasonCode != 1) {
-        const reason = this.getWiFiErrorMessage(reasonCode);
-        uiLoader.show("connecting", reason, "rgba(219, 77, 77, 0.95)");
-        setTimeout(() => uiLoader.hide(), 2000);
-      }
-
-      this.buttonConnectionRole("connect");
-      this.blockUi(false);
-      this.blockSlandstone(false);
-      this.updateStatus(null);
-    },
- */
-
-  //===========================================================================================
   hideConnectionInfo() {
     const infoText = this.connectionInfoText;
     const info = document.querySelector(".connection-info");
@@ -648,7 +538,6 @@ class WifiModule extends BaseSettingsModule {
     const { connect } = data;
     const infoText = this.connectionInfoText;
     if (infoText && connect.ssid && connect.ip !== "0.0.0.0") {
-      //infoText.value = `${connect.ssid} (IP: ${connect.ip})`;
       infoText.value = `${connect.ip}`;
       if (info) info.style.display = "flex";
       this.buttonConnectionRole("disconnect");
@@ -703,13 +592,9 @@ class WifiModule extends BaseSettingsModule {
   }
 
   destroy() {
-    if (this.scanTimeout) {
-      clearTimeout(this.scanTimeout);
-      this.scanTimeout = null;
+    if (this.showTimeoutTimer) {
+      clearTimeout(this.showTimeoutTimer);
+      this.showTimeoutTimer = null;
     }
-    this.clearConnectTimeout();
-
-    this.isScanning = false;
-    this.isConnecting = false;
   }
 }

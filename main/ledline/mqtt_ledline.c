@@ -246,7 +246,6 @@ esp_err_t mqtt_ledline_resources_init(void)
                 ESP_LOGE(TAG, "Failed to load MQTT user from NVS: %s", esp_err_to_name(user_result));
                 return user_result != ESP_OK ? user_result : ESP_ERR_INVALID_ARG;
             }
-            ESP_LOGI(TAG, "Loaded MQTT user: %s", user_str);
 
             str_size = sizeof(password_str);
             esp_err_t pass_result = nvs_load_data("mqtt", "password", password_str, &str_size, NVS_TYPE_STR);
@@ -255,7 +254,6 @@ esp_err_t mqtt_ledline_resources_init(void)
                 ESP_LOGE(TAG, "Failed to load MQTT password from NVS: %s", esp_err_to_name(pass_result));
                 return pass_result != ESP_OK ? pass_result : ESP_ERR_INVALID_ARG;
             }
-            ESP_LOGI(TAG, "Loaded MQTT password: %s", password_str);
 
             str_size = sizeof(temp_hostname_str);
             esp_err_t hostname_result = nvs_load_data("device", "hostname", temp_hostname_str, &str_size, NVS_TYPE_STR);

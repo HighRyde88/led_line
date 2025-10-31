@@ -5,11 +5,14 @@
 #include "led_strip.h"
 #include "mqtt_ledline.h"
 
+#define RGB_COLOR_DEFAULT() ((rgb_t){ .r = 168, .g = 73, .b = 179 })
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
+    void start_effects_ledline(void);
     void task_effects(void *pvParameters);
 
     // Support functions
