@@ -3,7 +3,7 @@
 #include "server/server.h"
 
 //=================================================================
-void send_response_json(const char *type, const char *target, const char *status, const char *message)
+void send_response_json(const char *type, const char *target, const char *status, const void *message, bool isObject)
 {
     cJSON *response = cJSON_CreateObject();
     if (!response)
@@ -15,8 +15,17 @@ void send_response_json(const char *type, const char *target, const char *status
     if (target)
         cJSON_AddStringToObject(response, "target", target);
     cJSON_AddStringToObject(response, "status", status);
-    if (message)
-        cJSON_AddStringToObject(response, "data", message);
+
+    if (message && !isObject)
+    {
+        char *message_str = (char *)message;
+        cJSON_AddStringToObject(response, "data", message_str);
+    }
+    else if (message && isObject)
+    {
+        cJSON *message_obj = (cJSON *)message;
+        cJSON_AddItemToObject(response, "data", message_obj);
+    }
 
     char *json_str = cJSON_PrintUnformatted(response);
     cJSON_Delete(response);

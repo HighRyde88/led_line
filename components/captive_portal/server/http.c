@@ -172,9 +172,9 @@ void captive_portal_http_server_start(esp_netif_t *netif)
     config.max_open_sockets = 7;
     config.lru_purge_enable = true;
     config.max_uri_handlers = 19;
-    config.stack_size = 8192;      // Увеличено
-    config.recv_wait_timeout = 5; // Добавлено
-    config.send_wait_timeout = 5; // Добавлено
+    config.stack_size = 8192;
+    config.recv_wait_timeout = 5;
+    config.send_wait_timeout = 5;
 
     if (http_server)
     {

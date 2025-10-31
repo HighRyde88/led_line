@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include "server/server.h"
-
 #include "modules/modules.h"
 
 #define WS_SEND_QUEUE_SIZE 10
@@ -49,6 +48,9 @@ typedef struct
     ws_target_handler_t handler;
 } ws_target_route_t;
 
+// Forward declaration for websocket target
+static esp_err_t websocket_module_target(cJSON *json);
+
 static const ws_target_route_t target_routes[] = {
     {"control", control_module_target},
     {"device", device_module_target},
@@ -57,9 +59,35 @@ static const ws_target_route_t target_routes[] = {
     {"network", network_module_target},
     {"apoint", apoint_module_target},
     {"mqtt", mqtt_module_target},
-    {"update", update_module_target}};
+    {"update", update_module_target},
+    {"websocket", websocket_module_target}  // Добавлено
+};
 
 static const size_t target_routes_count = sizeof(target_routes) / sizeof(target_routes[0]);
+
+//=================================================================
+// Websocket target handler
+//=================================================================
+static esp_err_t websocket_module_target(cJSON *json)
+{
+    cJSON *action = cJSON_GetObjectItemCaseSensitive(json, "action");
+    if (!cJSON_IsString(action) || !action->valuestring)
+    {
+        send_response_json("response", "websocket", "error_action", "missing or invalid 'action'", false);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (strcmp(action->valuestring, "ping") == 0)
+    {
+        // Отправляем pong
+        send_response_json("response", "websocket", "pong", NULL, false);
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "Unknown action for websocket target: %s", action->valuestring);
+    send_response_json("response", "websocket", "error_action", "unknown action", false);
+    return ESP_ERR_INVALID_ARG;
+}
 
 //=================================================================
 // Client disconnect handler
@@ -70,7 +98,7 @@ static void on_http_client_disconnect(httpd_handle_t server, int sockfd)
 
     if (socket_mutex && !server_stopped)
     {
-        if (xSemaphoreTake(socket_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        if (xSemaphoreTake(socket_mutex, pdMS_TO_TICKS(20)) == pdTRUE)
         {
             if (client_socket == sockfd)
             {
@@ -90,20 +118,20 @@ static void websocket_router(cJSON *json)
     cJSON *type = cJSON_GetObjectItemCaseSensitive(json, "type");
     if (!cJSON_IsString(type) || !type->valuestring)
     {
-        send_response_json("response", "invalid", "error_type", "missing or invalid 'type'");
+        send_response_json("response", "invalid", "error_type", "missing or invalid 'type'", false);
         return;
     }
 
     if (strcmp(type->valuestring, "request") != 0)
     {
-        send_response_json("response", "invalid", "error_type", "unknown type");
+        send_response_json("response", "invalid", "error_type", "unknown type", false);
         return;
     }
 
     cJSON *target = cJSON_GetObjectItemCaseSensitive(json, "target");
     if (!cJSON_IsString(target) || !target->valuestring)
     {
-        send_response_json("response", "invalid", "error_target", "missing or invalid 'target'");
+        send_response_json("response", "invalid", "error_target", "missing or invalid 'target'", false);
         return;
     }
 
@@ -117,7 +145,7 @@ static void websocket_router(cJSON *json)
     }
 
     ESP_LOGW(TAG, "Unknown target: %s", target->valuestring);
-    send_response_json("response", target->valuestring, "error_target", "unknown target");
+    send_response_json("response", target->valuestring, "error_target", "unknown target", false);
 }
 
 //=================================================================
@@ -140,7 +168,7 @@ static esp_err_t websocket_handler(httpd_req_t *req)
             client_socket = new_sockfd;
             xSemaphoreGive(socket_mutex);
 
-            send_response_json("event", "system", "ws_ready", NULL);
+            send_response_json("event", "system", "ws_ready", NULL, false);
             ESP_LOGI(TAG, "Sent 'ready' event to client");
         }
         return ESP_OK;
@@ -187,7 +215,7 @@ static esp_err_t websocket_handler(httpd_req_t *req)
         else
         {
             ESP_LOGW(TAG, "JSON parse error: %s", cJSON_GetErrorPtr());
-            send_response_json("response", "system", "error_json", "invalid json");
+            send_response_json("response", "system", "error_json", "invalid json", false);
         }
     }
     else
@@ -214,7 +242,7 @@ static void ws_sender_task(void *pvParameters)
                 break;
 
             int sock = -1;
-            if (xSemaphoreTake(socket_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            if (xSemaphoreTake(socket_mutex, pdMS_TO_TICKS(20)) == pdTRUE)
             {
                 sock = client_socket;
                 xSemaphoreGive(socket_mutex);
@@ -236,23 +264,30 @@ static void ws_sender_task(void *pvParameters)
             if (ret != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to send message: %s", esp_err_to_name(ret));
-            }
 
-            ESP_LOGI(TAG, "Transmited text: %.*s", msg.len, msg.payload);
+                // Попробуем закрыть сессию, если ошибка критическая
+                if (ret == ESP_ERR_INVALID_ARG || ret == ESP_ERR_INVALID_STATE)
+                {
+                    ESP_LOGW(TAG, "Triggering close due to send error.");
+                    httpd_sess_trigger_close(ws_server, sock);
+                }
+            }
+            else
+            {
+                ESP_LOGI(TAG, "Transmited text: %.*s", msg.len, msg.payload);
+            }
 
             free(msg.payload);
         }
     }
 
     // Очистка оставшихся сообщений в очереди при завершении
-    if (ws_send_queue)
+    ws_msg_t cleanup_msg;
+    while (xQueueReceive(ws_send_queue, &cleanup_msg, 0) == pdTRUE)
     {
-        while (xQueueReceive(ws_send_queue, &msg, 0) == pdTRUE)
+        if (cleanup_msg.payload)
         {
-            if (msg.payload)
-            {
-                free(msg.payload);
-            }
+            free(cleanup_msg.payload);
         }
     }
 
@@ -312,19 +347,18 @@ void captive_portal_ws_server_start(esp_netif_t *netif)
     // Configure and start HTTP server
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8810;
-    config.ctrl_port = ESP_HTTPD_DEF_CTRL_PORT + 1;
+    config.ctrl_port = ESP_HTTPD_DEF_CTRL_PORT - 1;
     config.close_fn = on_http_client_disconnect;
     config.max_open_sockets = 1; // Ограничить до 1 соединения
     config.stack_size = WS_TASK_STACK_SIZE;
-    config.lru_purge_enable = true; // Включить автоматическую очистку неактивных сессий
-    config.recv_wait_timeout = 5;   // Таймаут ожидания данных
-    config.send_wait_timeout = 5;   // Таймаут отправки данных
+    config.lru_purge_enable = true;
+    config.recv_wait_timeout = 60;   // Таймаут ожидания данных
+    config.send_wait_timeout = 60;   // Таймаут отправки данных
     config.global_user_ctx = NULL;
     config.global_user_ctx_free_fn = NULL;
     config.global_transport_ctx = NULL;
     config.global_transport_ctx_free_fn = NULL;
     config.open_fn = NULL;
-    config.close_fn = on_http_client_disconnect;
 
     ESP_LOGI(TAG, "Starting WebSocket server on port %d", config.server_port);
 
@@ -335,7 +369,7 @@ void captive_portal_ws_server_start(esp_netif_t *netif)
             .uri = "/",
             .method = HTTP_GET,
             .handler = websocket_handler,
-            .user_ctx = netif, // Передаем netif для проверки
+            .user_ctx = netif,
             .is_websocket = true};
 
         if (httpd_register_uri_handler(ws_server, &ws_uri) == ESP_OK)
@@ -394,20 +428,17 @@ esp_err_t captive_portal_ws_server_stop(void)
     // Clean up sender task
     if (sender_task_handle)
     {
-        // Отправляем сигнал завершения
         ws_msg_t stop_msg = {.payload = NULL, .len = 0};
         if (ws_send_queue)
         {
             xQueueSend(ws_send_queue, &stop_msg, pdMS_TO_TICKS(100));
         }
 
-        // Ждем завершения или таймаут
         for (int i = 0; i < 10 && sender_task_handle != NULL; i++)
         {
             vTaskDelay(pdMS_TO_TICKS(100));
         }
 
-        // Принудительно удаляем если не завершилась
         if (sender_task_handle)
         {
             vTaskDelete(sender_task_handle);
@@ -415,7 +446,7 @@ esp_err_t captive_portal_ws_server_stop(void)
         sender_task_handle = NULL;
     }
 
-    // Clean up message queue
+    // Clean up queue
     if (ws_send_queue)
     {
         ws_msg_t msg;

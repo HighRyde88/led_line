@@ -45,13 +45,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id)
     {
     case MQTT_EVENT_CONNECTED:
-        send_response_json("event", "mqtt", "mqtt_connection_success", NULL);
+        send_response_json("event", "mqtt", "mqtt_connection_success", NULL, false);
         xTaskCreate(task_mqtt_stop, "mqtt_task_stop", 2048,
                     (void *)handler_args, 5, NULL);
         break;
 
     case MQTT_EVENT_ERROR:
-        send_response_json("event", "mqtt", "mqtt_connection_failed", NULL);
+        send_response_json("event", "mqtt", "mqtt_connection_failed", NULL, false);
         xTaskCreate(task_mqtt_stop, "mqtt_task_stop", 2048,
                     (void *)handler_args, 5, NULL);
         break;
@@ -67,7 +67,7 @@ esp_err_t mqtt_module_target(cJSON *json)
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
         ESP_LOGW(TAG, "Invalid or missing 'action'");
-        send_response_json("response", "mqtt", "error_mqtt", "\"invalid or missing 'action'\"");
+        send_response_json("response", "mqtt", "error_mqtt", "\"invalid or missing 'action'\"", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -79,7 +79,7 @@ esp_err_t mqtt_module_target(cJSON *json)
         if (data_obj == NULL)
         {
             ESP_LOGW(TAG, "Missing 'data' in save request");
-            send_response_json("response", "mqtt", "error_partial", "\"missing 'data'\"");
+            send_response_json("response", "mqtt", "error_partial", "\"missing 'data'\"", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -90,7 +90,7 @@ esp_err_t mqtt_module_target(cJSON *json)
             if (temp_port <= 0 || temp_port > 65535)
             {
                 ESP_LOGE(TAG, "Invalid MQTT port provided: %s", port_item->valuestring);
-                send_response_json("response", "mqtt", "error_partial", "invalid port provided (must be 1-65535)");
+                send_response_json("response", "mqtt", "error_partial", "invalid port provided (must be 1-65535)", false);
                 return ESP_ERR_INVALID_ARG;
             }
         }
@@ -105,7 +105,7 @@ esp_err_t mqtt_module_target(cJSON *json)
                 if (str_len > 31) // 32 байта, включая null-терминатор
                 {
                     ESP_LOGE(TAG, "String field '%s' too long: %zu characters (max 31)", current_item->string, str_len);
-                    send_response_json("response", "mqtt", "error_partial", "string field too long (max 31 characters)");
+                    send_response_json("response", "mqtt", "error_partial", "string field too long (max 31 characters)", false);
                     return ESP_ERR_INVALID_ARG;
                 }
             }
@@ -120,12 +120,12 @@ esp_err_t mqtt_module_target(cJSON *json)
 
         if (result == ESP_OK)
         {
-            send_response_json("response", "mqtt", "saved_partial", NULL);
+            send_response_json("response", "mqtt", "saved_partial", NULL, false);
         }
         else
         {
             ESP_LOGE(TAG, "Save failed: %s", esp_err_to_name(result));
-            send_response_json("response", "mqtt", "error_partial", "save failed");
+            send_response_json("response", "mqtt", "error_partial", "save failed", false);
         }
     }
     else if (strcmp(action->valuestring, "load_partial") == 0)
@@ -137,35 +137,12 @@ esp_err_t mqtt_module_target(cJSON *json)
 
         if (load_settings != NULL)
         {
-            cJSON *response = cJSON_CreateObject();
-            if (!response)
-            {
-                ESP_LOGE(TAG, "Failed to create JSON response");
-                return ESP_ERR_NO_MEM;
-            }
-
-            cJSON_AddStringToObject(response, "type", "response");
-            cJSON_AddStringToObject(response, "target", "mqtt");
-            cJSON_AddStringToObject(response, "status", "load_partial");
-            cJSON_AddItemToObject(response, "data", load_settings);
-
-            char *json_str = cJSON_PrintUnformatted(response);
-            cJSON_Delete(response);
-
-            if (json_str)
-            {
-                ws_server_send_string(json_str);
-                cJSON_free(json_str);
-            }
-            else
-            {
-                ESP_LOGE(TAG, "Failed to serialize JSON response");
-            }
+            send_response_json("response", "mqtt", "load_partial", load_settings, true);
         }
         else
         {
             ESP_LOGE(TAG, "Load failed");
-            send_response_json("response", "mqtt", "error_partial", "load failed");
+            send_response_json("response", "mqtt", "error_partial", "load failed", false);
             return ESP_ERR_NOT_FOUND;
         }
     }
@@ -175,7 +152,7 @@ esp_err_t mqtt_module_target(cJSON *json)
         if (data_obj == NULL)
         {
             ESP_LOGW(TAG, "Missing 'data' in test request");
-            send_response_json("response", "mqtt", "mqtt_test_error", "\"missing 'data'\"");
+            send_response_json("response", "mqtt", "mqtt_test_error", "\"missing 'data'\"", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -204,24 +181,24 @@ esp_err_t mqtt_module_target(cJSON *json)
             if (test_client != NULL)
             {
                 ESP_LOGI(TAG, "MQTT test connection success");
-                send_response_json("response", "mqtt", "mqtt_test_ok", "success test started");
+                send_response_json("response", "mqtt", "mqtt_test_ok", "success test started", false);
             }
             else
             {
                 ESP_LOGE(TAG, "MQTT test connection failed");
-                send_response_json("response", "mqtt", "mqtt_test_error", "failed test started");
+                send_response_json("response", "mqtt", "mqtt_test_error", "failed test started", false);
             }
         }
         else
         {
-            send_response_json("response", "mqtt", "mqtt_test_error", "value error");
+            send_response_json("response", "mqtt", "mqtt_test_error", "value error", false);
             return ESP_ERR_INVALID_ARG;
         }
     }
     else
     {
         ESP_LOGW(TAG, "Unknown action: %s", action->valuestring);
-        send_response_json("response", "mqtt", "error_mqtt", "unknown action");
+        send_response_json("response", "mqtt", "error_mqtt", "unknown action", false);
         return ESP_ERR_INVALID_ARG;
     }
 

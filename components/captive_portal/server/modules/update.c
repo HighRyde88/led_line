@@ -28,7 +28,7 @@ esp_err_t update_module_target(cJSON *json)
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
         ESP_LOGW(TAG, "Invalid or missing 'action'");
-        send_response_json("response", "update", "error_update", "\"invalid or missing 'action'\"");
+        send_response_json("response", "update", "error_update", "\"invalid or missing 'action'\"", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -37,41 +37,22 @@ esp_err_t update_module_target(cJSON *json)
     }
     else if (strcmp(action->valuestring, "load_partial") == 0)
     {
-        cJSON *response = cJSON_CreateObject();
-        if (!response)
+        cJSON *data_obj = cJSON_CreateObject();
+        if (!data_obj)
         {
-            ESP_LOGE(TAG, "Failed to create JSON response");
+            ESP_LOGE(TAG, "Failed to create data object");
             return ESP_ERR_NO_MEM;
         }
-
-        cJSON_AddStringToObject(response, "type", "response");
-        cJSON_AddStringToObject(response, "target", "update");
-        cJSON_AddStringToObject(response, "status", "load_partial");
-
-        cJSON *version_obj = cJSON_CreateObject();
 
         const esp_app_desc_t *app = esp_app_get_description();
         const esp_bootloader_desc_t *boot = esp_bootloader_get_description();
 
-        cJSON_AddStringToObject(version_obj, "application", app->version);
+        cJSON_AddStringToObject(data_obj, "application", app->version);
         char boot_version[8] = {0};
         snprintf(boot_version, sizeof(boot_version), "%lu", boot->version);
-        cJSON_AddStringToObject(version_obj, "bootloader", boot_version);
+        cJSON_AddStringToObject(data_obj, "bootloader", boot_version);
 
-        cJSON_AddItemToObject(response, "data", version_obj);
-
-        char *json_str = cJSON_PrintUnformatted(response);
-        cJSON_Delete(response);
-
-        if (json_str)
-        {
-            ws_server_send_string(json_str);
-            cJSON_free(json_str);
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Failed to serialize JSON response");
-        }
+        send_response_json("response", "update", "load_partial", data_obj, true);
     }
 
     return ESP_OK;

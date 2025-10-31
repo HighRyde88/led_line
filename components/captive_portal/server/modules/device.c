@@ -28,7 +28,7 @@ esp_err_t device_module_target(cJSON *json)
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
         ESP_LOGW(TAG, "Invalid or missing 'action'");
-        send_response_json("response", "device", "error_partial", "\"invalid or missing 'action'\"");
+        send_response_json("response", "device", "error_partial", "\"invalid or missing 'action'\"", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -39,7 +39,7 @@ esp_err_t device_module_target(cJSON *json)
         if (data_obj == NULL)
         {
             ESP_LOGW(TAG, "Missing 'data' in save request");
-            send_response_json("response", "device", "error_partial", "\"missing 'data'\"");
+            send_response_json("response", "device", "error_partial", "\"missing 'data'\"", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -51,7 +51,7 @@ esp_err_t device_module_target(cJSON *json)
             if (hostname_len > 63) // ESP-IDF обычно ограничивает hostname до 63 байт
             {
                 ESP_LOGE(TAG, "Hostname too long: %zu characters (max 63)", hostname_len);
-                send_response_json("response", "device", "error_partial", "\"Hostname too long (max 63 characters)\"");
+                send_response_json("response", "device", "error_partial", "\"Hostname too long (max 63 characters)\"", false);
                 return ESP_ERR_INVALID_ARG;
             }
         }
@@ -65,7 +65,7 @@ esp_err_t device_module_target(cJSON *json)
         if (result != ESP_OK)
         {
             ESP_LOGE(TAG, "Failed to parse and save general settings");
-            send_response_json("response", "device", "error_partial", "parse and save failed");
+            send_response_json("response", "device", "error_partial", "parse and save failed", false);
             return result;
         }
 
@@ -81,12 +81,12 @@ esp_err_t device_module_target(cJSON *json)
 
         if (result == ESP_OK)
         {
-            send_response_json("response", "device", "saved_partial", NULL);
+            send_response_json("response", "device", "saved_partial", NULL, false);
         }
         else
         {
             ESP_LOGE(TAG, "Save failed: %s", esp_err_to_name(result));
-            send_response_json("response", "device", "error_partial", "save failed");
+            send_response_json("response", "device", "error_partial", "save failed", false);
         }
 
         return result;
@@ -100,43 +100,19 @@ esp_err_t device_module_target(cJSON *json)
 
         if (load_settings != NULL)
         {
-            cJSON *response = cJSON_CreateObject();
-            if (!response)
-            {
-                ESP_LOGE(TAG, "Failed to create JSON response");
-                cJSON_Delete(load_settings);
-                return ESP_ERR_NO_MEM;
-            }
-
-            cJSON_AddStringToObject(response, "type", "response");
-            cJSON_AddStringToObject(response, "target", "device");
-            cJSON_AddStringToObject(response, "status", "load_partial");
-            cJSON_AddItemToObject(response, "data", load_settings);
-
-            char *json_str = cJSON_PrintUnformatted(response);
-            cJSON_Delete(response);
-
-            if (json_str)
-            {
-                ws_server_send_string(json_str);
-                cJSON_free(json_str);
-            }
-            else
-            {
-                ESP_LOGE(TAG, "Failed to serialize JSON response");
-            }
+            send_response_json("response", "device", "load_partial", load_settings, true);
         }
         else
         {
             ESP_LOGE(TAG, "Load failed");
-            send_response_json("response", "device", "error_partial", "load failed");
+            send_response_json("response", "device", "error_partial", "load failed", false);
             return ESP_ERR_NOT_FOUND;
         }
     }
     else
     {
         ESP_LOGW(TAG, "Unknown action: %s", action->valuestring);
-        send_response_json("response", "device", "error_partial", "unknown action");
+        send_response_json("response", "device", "error_partial", "unknown action", false);
         return ESP_ERR_INVALID_ARG;
     }
 

@@ -87,7 +87,6 @@ class FSM {
   }
 }
 
-// wifi_module.js
 class WifiModule extends BaseSettingsModule {
   constructor() {
     super();
@@ -219,6 +218,7 @@ class WifiModule extends BaseSettingsModule {
           action: "ap_scan_start",
         })
       ) {
+        this.password.value = "";
         uiLoader.show("scanning", "Поиск сетей...", "rgba(77, 175, 231, 0.9)");
 
         this.showTimeoutTimer = setTimeout(() => {
@@ -366,20 +366,20 @@ class WifiModule extends BaseSettingsModule {
   };
   //===========================================================================================
   handleResponse(data) {
-    const handler = this.responseHandlerss[data.status];
+    const handler = this.responseHandlers[data.status];
     if (handler) {
       handler.call(this, data);
     }
   }
 
   handleEvent(data) {
-    const handler = this.eventHandlerss[data.status];
+    const handler = this.eventHandlers[data.status];
     if (handler) {
       handler.call(this, data);
     }
   }
 
-  responseHandlerss = {
+  responseHandlers = {
     ap_scan_started: (data) => {},
     ap_scan_already: (data) => {
       clearTimeout(this.showTimeoutTimer);
@@ -399,15 +399,13 @@ class WifiModule extends BaseSettingsModule {
     //=====================================
     ap_connect_ok: (data) => {},
     ap_status: (data) => {
-      const ap_status = data.data;
+      const status = data.data;
 
       if (this.standaloneToggle) this.standaloneToggle.checked = false;
 
-      this.updateStatus(ap_status);
-
-      const connect = ap_status;
-
-      this.wifiFSM.transition("ap_connected", connect);
+      this.updateStatus(status);
+      
+      this.wifiFSM.transition("ap_connected", status.connect);
     },
     ap_config: (data) => {
       const current = document.getElementById("ssid-select");
@@ -444,7 +442,7 @@ class WifiModule extends BaseSettingsModule {
     },
   };
 
-  eventHandlerss = {
+  eventHandlers = {
     ap_scan_success: (data) => {
       const ap_count = data.data?.count || 0;
       if (ap_count > 0) {

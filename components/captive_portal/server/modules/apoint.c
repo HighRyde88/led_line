@@ -24,7 +24,7 @@ esp_err_t apoint_module_target(cJSON *json)
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
         ESP_LOGW(TAG, "Invalid or missing 'action'");
-        send_response_json("response", "apoint", "error_partial", "\"invalid or missing 'action'\"");
+        send_response_json("response", "apoint", "error_partial", "\"invalid or missing 'action'\"", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -37,7 +37,7 @@ esp_err_t apoint_module_target(cJSON *json)
         if (data_obj == NULL)
         {
             ESP_LOGW(TAG, "Missing 'data' in save request");
-            send_response_json("response", "apoint", "error_partial", "\"missing 'data'\"");
+            send_response_json("response", "apoint", "error_partial", "\"missing 'data'\"", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -50,7 +50,7 @@ esp_err_t apoint_module_target(cJSON *json)
             if (ssid_len > 31) // 32 байта, включая null-терминатор
             {
                 ESP_LOGE(TAG, "SSID too long: %zu characters (max 31)", ssid_len);
-                send_response_json("response", "apoint", "error_partial", "\"SSID too long (max 31 characters)\"");
+                send_response_json("response", "apoint", "error_partial", "\"SSID too long (max 31 characters)\"", false);
                 return ESP_ERR_INVALID_ARG;
             }
             strncpy((char *)ap_config.ssid, ssid_obj->valuestring, sizeof(ap_config.ssid) - 1);
@@ -59,7 +59,7 @@ esp_err_t apoint_module_target(cJSON *json)
         else
         {
             ESP_LOGW(TAG, "SSID is missing or not a string");
-            send_response_json("response", "apoint", "error_partial", "\"SSID is missing or invalid\"");
+            send_response_json("response", "apoint", "error_partial", "\"SSID is missing or invalid\"", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -69,7 +69,7 @@ esp_err_t apoint_module_target(cJSON *json)
             if (passw_len > 63) // 64 байта, включая null-терминатор
             {
                 ESP_LOGE(TAG, "Password too long: %zu characters (max 63)", passw_len);
-                send_response_json("response", "apoint", "error_partial", "\"Password too long (max 63 characters)\"");
+                send_response_json("response", "apoint", "error_partial", "\"Password too long (max 63 characters)\"", false);
                 return ESP_ERR_INVALID_ARG;
             }
             strncpy((char *)ap_config.password, passw_obj->valuestring, sizeof(ap_config.password) - 1);
@@ -85,34 +85,22 @@ esp_err_t apoint_module_target(cJSON *json)
 
         if (result == ESP_OK)
         {
-            send_response_json("response", "apoint", "saved_partial", NULL);
+            send_response_json("response", "apoint", "saved_partial", NULL, false);
         }
         else
         {
             ESP_LOGE(TAG, "Save failed: %s", esp_err_to_name(result));
-            send_response_json("response", "apoint", "error_partial", "save failed");
+            send_response_json("response", "apoint", "error_partial", "save failed", false);
         }
 
         return result;
     }
     else if (strcmp(action->valuestring, "load_partial") == 0)
     {
-        cJSON *response = cJSON_CreateObject();
-        if (!response)
-        {
-            ESP_LOGE(TAG, "Failed to create JSON response");
-            return ESP_ERR_NO_MEM;
-        }
-
-        cJSON_AddStringToObject(response, "type", "response");
-        cJSON_AddStringToObject(response, "target", "apoint");
-        cJSON_AddStringToObject(response, "status", "load_partial");
-
         cJSON *data_obj = cJSON_CreateObject();
         if (!data_obj)
         {
             ESP_LOGE(TAG, "Failed to create JSON response");
-            cJSON_Delete(response);
             return ESP_ERR_NO_MEM;
         }
 
@@ -121,29 +109,13 @@ esp_err_t apoint_module_target(cJSON *json)
             cJSON_AddStringToObject(data_obj, "ssid", (char *)ap_config.ssid);
             cJSON_AddStringToObject(data_obj, "password", (char *)ap_config.password);
         }
-        else
-        {
-        }
 
-        cJSON_AddItemToObject(response, "data", data_obj);
-
-        char *json_str = cJSON_PrintUnformatted(response);
-        cJSON_Delete(response);
-
-        if (json_str)
-        {
-            ws_server_send_string(json_str);
-            cJSON_free(json_str);
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Failed to serialize JSON response");
-        }
+        send_response_json("response", "apoint", "load_partial", data_obj, true);
     }
     else
     {
         ESP_LOGW(TAG, "Unknown action: %s", action->valuestring);
-        send_response_json("response", "apoint", "error_partial", "unknown action");
+        send_response_json("response", "apoint", "error_partial", "unknown action", false);
         return ESP_ERR_INVALID_ARG;
     }
 

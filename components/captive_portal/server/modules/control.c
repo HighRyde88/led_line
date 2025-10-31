@@ -79,7 +79,7 @@ esp_err_t control_module_target(cJSON *json)
     cJSON *action = cJSON_GetObjectItemCaseSensitive(json, "action");
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
-        send_response_json("response", "control", "error", "missing or invalid 'action'");
+        send_response_json("response", "control", "error", "missing or invalid 'action'", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -106,7 +106,7 @@ esp_err_t control_module_target(cJSON *json)
     }
     else
     {
-        send_response_json("response", "control", "error", "unknown action");
+        send_response_json("response", "control", "error", "unknown action", false);
         return ESP_ERR_INVALID_ARG;
     }
 

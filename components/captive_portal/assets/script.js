@@ -9,10 +9,16 @@ const ethernet_status = $("ethernet-status");
 
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_INTERVAL = 1000;
+const PING_INTERVAL = 5000;       // 5 секунд
+const PONG_TIMEOUT = 5000;        // 5 секунд ожидания ответа
 
 // Удалена локальная переменная webSocket
 let reconnectAttempts = 0;
 let notificationTimers = { settingsStatus: null, statusAction: null };
+
+// Переменные для ping/pong
+let pingInterval = null;
+let pongTimeout = null;
 
 function initWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -24,10 +30,18 @@ function initWebSocket() {
     window.webSocket.onopen = () => {
       reconnectAttempts = 0;
       console.log("WebSocket connected");
+      startPing();
     };
     window.webSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+
+        // Обработка pong
+        if (data.type === "response" && data.target === "websocket" && data.status === "pong") {
+          clearTimeout(pongTimeout);
+          console.log("Pong received, connection alive");
+          return;
+        }
 
         if (data.type === "event" && data.target === "system" && data.status === "ws_ready") {
           window.SettingsCore.callAllModulesAndSendWS("onAppStart");
@@ -47,11 +61,42 @@ function initWebSocket() {
   }
 }
 
+function startPing() {
+  // Очищаем старые таймеры, если были
+  if (pingInterval) clearInterval(pingInterval);
+  if (pongTimeout) clearTimeout(pongTimeout);
+
+  // Запускаем ping каждые 10 секунд
+  pingInterval = setInterval(() => {
+    if (window.webSocket && window.webSocket.readyState === WebSocket.OPEN) {
+      sendWS({ type: "request", target: "websocket", action: "ping" });
+      // Устанавливаем таймаут на ожидание pong
+      pongTimeout = setTimeout(() => {
+        console.warn("Pong not received in time, closing WebSocket");
+        window.webSocket.close();
+      }, PONG_TIMEOUT);
+    }
+  }, PING_INTERVAL);
+}
+
+function stopPing() {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+  }
+  if (pongTimeout) {
+    clearTimeout(pongTimeout);
+    pongTimeout = null;
+  }
+}
+
 function handleWebSocketClose() {
+  stopPing();
   reconnectIfNeeded(initWebSocket);
 }
 
 function handleWebSocketError() {
+  stopPing();
   reconnectIfNeeded(initWebSocket);
 }
 
@@ -180,4 +225,5 @@ window.addEventListener("beforeunload", () => {
     window.webSocket.onclose = null;
     window.webSocket.close();
   }
+  stopPing();
 });

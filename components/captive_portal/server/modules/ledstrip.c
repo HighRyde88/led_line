@@ -30,7 +30,7 @@ esp_err_t ledstrip_module_target(cJSON *json)
     cJSON *action = cJSON_GetObjectItemCaseSensitive(json, "action");
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
-        send_response_json("response", "ledstrip", "error_partial", "missing or invalid 'action'");
+        send_response_json("response", "ledstrip", "error_partial", "missing or invalid 'action'", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -48,7 +48,7 @@ esp_err_t ledstrip_module_target(cJSON *json)
             if (!GPIO_IS_VALID_OUTPUT_GPIO(temp_ledpin))
             {
                 ESP_LOGE(TAG, "Invalid LED pin provided: %s", ledpin_item->valuestring);
-                send_response_json("response", "ledstrip", "error_partial", "invalid ledpin provided");
+                send_response_json("response", "ledstrip", "error_partial", "invalid ledpin provided", false);
                 return ESP_ERR_INVALID_ARG;
             }
         }
@@ -61,7 +61,7 @@ esp_err_t ledstrip_module_target(cJSON *json)
             if (temp_lednum <= 0 || temp_lednum > 512)
             {
                 ESP_LOGE(TAG, "Invalid LED count provided: %s (must be 1-%d)", lednum_item->valuestring, 512);
-                send_response_json("response", "ledstrip", "error_partial", "invalid lednum provided (must be 1-512)");
+                send_response_json("response", "ledstrip", "error_partial", "invalid lednum provided (must be 1-512)", false);
                 return ESP_ERR_INVALID_ARG;
             }
         }
@@ -70,7 +70,7 @@ esp_err_t ledstrip_module_target(cJSON *json)
 
         if (result == ESP_OK)
         {
-            send_response_json("response", "ledstrip", "saved_partial", NULL);
+            send_response_json("response", "ledstrip", "saved_partial", NULL, false);
         }
     }
     else if (strcmp(action->valuestring, "load_partial") == 0)
@@ -82,42 +82,18 @@ esp_err_t ledstrip_module_target(cJSON *json)
 
         if (load_settings != NULL)
         {
-            cJSON *response = cJSON_CreateObject();
-            if (!response)
-            {
-                ESP_LOGE(TAG, "Failed to create JSON response");
-                cJSON_Delete(load_settings);
-                return ESP_ERR_NO_MEM;
-            }
-
-            cJSON_AddStringToObject(response, "type", "response");
-            cJSON_AddStringToObject(response, "target", "ledstrip");
-            cJSON_AddStringToObject(response, "status", "load_partial");
-            cJSON_AddItemToObject(response, "data", load_settings);
-
-            char *json_str = cJSON_PrintUnformatted(response);
-            cJSON_Delete(response);
-
-            if (json_str)
-            {
-                ws_server_send_string(json_str);
-                cJSON_free(json_str);
-            }
-            else
-            {
-                ESP_LOGE(TAG, "Failed to serialize JSON response");
-            }
+            send_response_json("response", "ledstrip", "load_partial", load_settings, true);
         }
         else
         {
             ESP_LOGE(TAG, "Load failed");
-            send_response_json("response", "ledstrip", "error_partial", "load failed");
+            send_response_json("response", "ledstrip", "error_partial", "load failed", false);
             return ESP_ERR_NOT_FOUND;
         }
     }
     else
     {
-        send_response_json("response", "ledstrip", "error_partial", "unknown action");
+        send_response_json("response", "ledstrip", "error_partial", "unknown action", false);
         return ESP_ERR_INVALID_ARG;
     }
 

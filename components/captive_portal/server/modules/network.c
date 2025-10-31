@@ -27,7 +27,7 @@ esp_err_t network_module_target(cJSON *json)
     if (!cJSON_IsString(action) || action->valuestring == NULL)
     {
         ESP_LOGW(TAG, "Invalid or missing 'action'");
-        send_response_json("response", "network", "error_partial", "\"invalid or missing 'action'\"");
+        send_response_json("response", "network", "error_partial", "\"invalid or missing 'action'\"", false);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -39,7 +39,7 @@ esp_err_t network_module_target(cJSON *json)
         if (data_obj == NULL)
         {
             ESP_LOGW(TAG, "Missing 'data' in save request");
-            send_response_json("response", "network", "error_partial", "missing 'data'");
+            send_response_json("response", "network", "error_partial", "missing 'data'", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -48,7 +48,7 @@ esp_err_t network_module_target(cJSON *json)
         if (!cJSON_IsString(mode_obj) || mode_obj->valuestring == NULL)
         {
             ESP_LOGW(TAG, "Missing 'mode' in save request");
-            send_response_json("response", "network", "error_partial", "missing 'mode'");
+            send_response_json("response", "network", "error_partial", "missing 'mode'", false);
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -76,7 +76,7 @@ esp_err_t network_module_target(cJSON *json)
                 if (ip_len > 15)
                 {
                     ESP_LOGE(TAG, "IP address too long: %s", ip_obj->valuestring);
-                    send_response_json("response", "network", "error_partial", "IP address too long (max 15 chars)");
+                    send_response_json("response", "network", "error_partial", "IP address too long (max 15 chars)", false);
                     return ESP_ERR_INVALID_ARG;
                 }
             }
@@ -87,7 +87,7 @@ esp_err_t network_module_target(cJSON *json)
                 if (netmask_len > 15)
                 {
                     ESP_LOGE(TAG, "Netmask too long: %s", netmask_obj->valuestring);
-                    send_response_json("response", "network", "error_partial", "Netmask too long (max 15 chars)");
+                    send_response_json("response", "network", "error_partial", "Netmask too long (max 15 chars)", false);
                     return ESP_ERR_INVALID_ARG;
                 }
             }
@@ -98,7 +98,7 @@ esp_err_t network_module_target(cJSON *json)
                 if (gateway_len > 15)
                 {
                     ESP_LOGE(TAG, "Gateway too long: %s", gateway_obj->valuestring);
-                    send_response_json("response", "network", "error_partial", "Gateway too long (max 15 chars)");
+                    send_response_json("response", "network", "error_partial", "Gateway too long (max 15 chars)", false);
                     return ESP_ERR_INVALID_ARG;
                 }
             }
@@ -127,37 +127,31 @@ esp_err_t network_module_target(cJSON *json)
         else
         {
             ESP_LOGW(TAG, "Unknown 'mode' in save request");
-            send_response_json("response", "network", "error_partial", "Unknown 'mode'");
+            send_response_json("response", "network", "error_partial", "Unknown 'mode'", false);
             return ESP_ERR_INVALID_ARG;
         }
 
         if (mode_result == ESP_OK && data_result == ESP_OK)
         {
-            send_response_json("response", "network", "saved_partial", NULL);
+            send_response_json("response", "network", "saved_partial", NULL, false);
             result = ESP_OK;
         }
         else
         {
             ESP_LOGE(TAG, "Save failed: mode_result=%s, data_result=%s",
                      esp_err_to_name(mode_result), esp_err_to_name(data_result));
-            send_response_json("response", "network", "error_partial", "save failed");
+            send_response_json("response", "network", "error_partial", "save failed", false);
             result = ESP_FAIL;
         }
     }
     else if (strcmp(action->valuestring, "load_partial") == 0)
     {
-        cJSON *response = cJSON_CreateObject();
-        if (!response)
+        cJSON *data_obj = cJSON_CreateObject();
+        if (!data_obj)
         {
-            ESP_LOGE(TAG, "Failed to create JSON response");
+            ESP_LOGE(TAG, "Failed to create data object");
             return ESP_ERR_NO_MEM;
         }
-
-        cJSON_AddStringToObject(response, "type", "response");
-        cJSON_AddStringToObject(response, "target", "network");
-        cJSON_AddStringToObject(response, "status", "load_partial");
-
-        cJSON *data_obj = cJSON_CreateObject();
 
         esp_netif_ip_info_t ip_info = {0};
 
@@ -181,25 +175,12 @@ esp_err_t network_module_target(cJSON *json)
             cJSON_AddStringToObject(data_obj, "mode", "dhcp");
         }
 
-        cJSON_AddItemToObject(response, "data", data_obj);
-
-        char *json_str = cJSON_PrintUnformatted(response);
-        cJSON_Delete(response);
-
-        if (json_str)
-        {
-            ws_server_send_string(json_str);
-            cJSON_free(json_str);
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Failed to serialize JSON response");
-        }
+        send_response_json("response", "network", "load_partial", data_obj, true);
     }
     else
     {
         ESP_LOGW(TAG, "Unknown action: %s", action->valuestring);
-        send_response_json("response", "network", "error_partial", "\"unknown action\"");
+        send_response_json("response", "network", "error_partial", "\"unknown action\"", false);
         return ESP_ERR_INVALID_ARG;
     }
 

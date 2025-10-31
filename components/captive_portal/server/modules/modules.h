@@ -18,7 +18,7 @@ extern "C"
     esp_err_t mqtt_module_target(cJSON *json);
     esp_err_t update_module_target(cJSON *json);
 
-    void send_response_json(const char* type, const char* target, const char* status, const char* message);
+    void send_response_json(const char *type, const char *target, const char *status, const void *message, bool isObject);
 
 #ifdef __cplusplus
 }
