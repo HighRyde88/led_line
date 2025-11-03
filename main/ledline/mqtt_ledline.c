@@ -10,17 +10,18 @@ char **topic_list = NULL;
 
 static char hostname_str[32] = {0};
 static bool isSubscribed = false;
+static bool initialized = false;
 
 static const char *default_topics[] = {
     "ledline/state",
     "ledline/color",
-    "ledline/brightness"};
-static const int default_topic_count = 3;
+    "ledline/brightness",
+    "ledline/mode"};
+static const int default_topic_count = 4;
 
 static const char *TAG = "led_strip_mqtt";
 
 QueueHandle_t mqttQueue = NULL;
-
 mqtt_client_handle_t mqttClient = NULL;
 
 //=================================================================
@@ -109,8 +110,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                     esp_err_t err = mqtt_client_subscribe(client, topic_list[i], 0);
                     if (err != ESP_OK)
                     {
-                        ESP_LOGE(TAG, "Failed to subscribe to topic %s, error: %s", 
-                                topic_list[i], esp_err_to_name(err));
+                        ESP_LOGE(TAG, "Failed to subscribe to topic %s, error: %s",
+                                 topic_list[i], esp_err_to_name(err));
                     }
                     else
                     {
@@ -119,6 +120,21 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 }
             }
             isSubscribed = true;
+
+            /*            
+            mqtt_publish_state("state", current_state ? "enable" : "disable");
+
+            char brightness_str[4] = {0};
+            sniprintf(brightness_str, sizeof(brightness_str), "%d", (int)((stored_brightness / 255.0) * 100));
+            mqtt_publish_state("brightness", brightness_str);
+
+            uint32_t color_int = color_from_hsv(current_color);
+            char color_str[16] = {0};
+            snprintf(color_str, sizeof(color_str), "#%06lX", color_int & 0x00FFFFFF);
+            mqtt_publish_state("color", color_str);
+
+            mqtt_publish_state("mode", "static");
+            */
         }
         break;
 
@@ -132,7 +148,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         {
             for (int i = 0; i < topic_count; i++)
             {
-                if (topic_list[i] != NULL && 
+                if (topic_list[i] != NULL &&
                     event->topic_len == strlen(topic_list[i]) &&
                     strncmp(event->topic, topic_list[i], event->topic_len) == 0)
                 {
@@ -144,28 +160,31 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                     {
                         ESP_LOGE(TAG, "Failed to allocate memory for data");
                         cleanup_needed = true;
+                        goto cleanup;
                     }
-                    
-                    if (!cleanup_needed)
+
+                    data_message.topic = strndup(event->topic, event->topic_len);
+                    if (data_message.topic == NULL)
                     {
-                        data_message.topic = strndup(event->topic, event->topic_len);
-                        if (data_message.topic == NULL)
-                        {
-                            ESP_LOGE(TAG, "Failed to allocate memory for topic");
-                            free(data_message.data);
-                            cleanup_needed = true;
-                        }
+                        ESP_LOGE(TAG, "Failed to allocate memory for topic");
+                        cleanup_needed = true;
+                        goto cleanup;
                     }
-                    
-                    if (!cleanup_needed)
+
+                    BaseType_t result = xQueueSend(mqttQueue, &data_message, 50 / portTICK_PERIOD_MS);
+                    if (result != pdTRUE)
                     {
-                        BaseType_t result = xQueueSend(mqttQueue, &data_message, 50 / portTICK_PERIOD_MS);
-                        if (result != pdTRUE)
-                        {
-                            ESP_LOGW(TAG, "Failed to send message to queue, queue full");
-                            free(data_message.data);
-                            free(data_message.topic);
-                        }
+                        ESP_LOGW(TAG, "Failed to send message to queue, queue full");
+                        cleanup_needed = true;
+                        goto cleanup;
+                    }
+                    break;
+
+                cleanup:
+                    if (cleanup_needed)
+                    {
+                        free(data_message.data);
+                        free(data_message.topic);
                     }
                     break;
                 }
@@ -198,6 +217,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 //=================================================================
 esp_err_t mqtt_ledline_resources_init(void)
 {
+    if (initialized)
+    {
+        ESP_LOGW(TAG, "MQTT already initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     char enable_str[16] = {0};
     size_t str_size = sizeof(enable_str);
     esp_err_t result = nvs_load_data("mqtt", "enable", enable_str, &str_size, NVS_TYPE_STR);
@@ -230,7 +255,7 @@ esp_err_t mqtt_ledline_resources_init(void)
                 ESP_LOGE(TAG, "Failed to load MQTT port from NVS: %s", esp_err_to_name(port_result));
                 return port_result != ESP_OK ? port_result : ESP_ERR_INVALID_ARG;
             }
-            
+
             int port = atoi(port_str);
             if (port <= 0 || port > 65535)
             {
@@ -259,8 +284,8 @@ esp_err_t mqtt_ledline_resources_init(void)
             esp_err_t hostname_result = nvs_load_data("device", "hostname", temp_hostname_str, &str_size, NVS_TYPE_STR);
             if (hostname_result != ESP_OK || strlen(temp_hostname_str) == 0)
             {
-                ESP_LOGW(TAG, "Failed to load hostname from NVS: %s, using default", 
-                        esp_err_to_name(hostname_result));
+                ESP_LOGW(TAG, "Failed to load hostname from NVS: %s, using default",
+                         esp_err_to_name(hostname_result));
                 strncpy(temp_hostname_str, "esp32device", sizeof(temp_hostname_str) - 1);
             }
             else
@@ -272,6 +297,12 @@ esp_err_t mqtt_ledline_resources_init(void)
             {
                 ESP_LOGE(TAG, "Hostname is empty, cannot proceed");
                 return ESP_ERR_INVALID_ARG;
+            }
+
+            // Усечение hostname с предупреждением
+            if (strlen(temp_hostname_str) >= sizeof(hostname_str))
+            {
+                ESP_LOGW(TAG, "Hostname truncated from %d to %d chars", (int)strlen(temp_hostname_str), (int)(sizeof(hostname_str) - 1));
             }
             strncpy(hostname_str, temp_hostname_str, sizeof(hostname_str) - 1);
             hostname_str[sizeof(hostname_str) - 1] = '\0';
@@ -290,7 +321,6 @@ esp_err_t mqtt_ledline_resources_init(void)
                 .username = user_str,
                 .password = password_str,
                 .auto_reconnect = true,
-                .reconnect_timeout_sec = 5
             };
 
             mqttQueue = xQueueCreate(8, sizeof(mqtt_data_t));
@@ -301,7 +331,7 @@ esp_err_t mqtt_ledline_resources_init(void)
             }
 
             ledline_set_mqtt_topics();
-            
+
             if (topic_count == 0 || topic_list == NULL)
             {
                 ESP_LOGE(TAG, "Failed to create MQTT topics");
@@ -319,7 +349,7 @@ esp_err_t mqtt_ledline_resources_init(void)
                 return ESP_FAIL;
             }
 
-            BaseType_t task_result = xTaskCreate(task_effects, "led_task_effect", 4096, NULL, 5, NULL);
+            BaseType_t task_result = xTaskCreate(task_mqtt_ledline, "task_mqtt_ledline", 4096, NULL, 5, NULL);
             if (task_result != pdPASS)
             {
                 ESP_LOGE(TAG, "Failed to create LED effects task");
@@ -330,6 +360,7 @@ esp_err_t mqtt_ledline_resources_init(void)
                 return ESP_FAIL;
             }
 
+            initialized = true; // <-- Установка флага инициализации
             ESP_LOGI(TAG, "MQTT configuration loaded successfully");
             return ESP_OK;
         }
@@ -351,6 +382,11 @@ esp_err_t mqtt_ledline_resources_init(void)
 //=================================================================
 void mqtt_ledline_resources_deinit(void)
 {
+    if (!initialized)
+    {
+        return;
+    }
+
     if (mqttClient != NULL)
     {
         mqtt_client_stop(mqttClient);
@@ -365,7 +401,7 @@ void mqtt_ledline_resources_deinit(void)
             free(item.data);
             free(item.topic);
         }
-        
+
         vQueueDelete(mqttQueue);
         mqttQueue = NULL;
     }
@@ -383,29 +419,63 @@ void mqtt_ledline_resources_deinit(void)
 
     isSubscribed = false;
     memset(hostname_str, 0, sizeof(hostname_str));
+    initialized = false; // <-- Сброс флага
 }
 
 //=================================================================
-esp_err_t mqtt_publish_state(const char* topic_suffix, const char* payload)
+esp_err_t mqtt_publish_state(const char *topic_suffix, const char *payload)
 {
-    if (!isSubscribed || mqttClient == NULL || topic_list == NULL)
+    if (!isSubscribed || mqttClient == NULL || topic_suffix == NULL || payload == NULL)
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    for (int i = 0; i < topic_count; i++)
+    // Проверяем, что topic_suffix соответствует одному из default_topics
+    bool is_valid_topic = false;
+    for (int i = 0; i < default_topic_count; i++)
     {
-        if (topic_list[i] != NULL && strstr(topic_list[i], topic_suffix))
+        if (strcmp(default_topics[i] + strlen("ledline/"), topic_suffix) == 0)
         {
-            int msg_id = mqtt_client_publish(mqttClient, topic_list[i], payload, 
-                                           strlen(payload), 0, 0);
-            if (msg_id < 0)
-            {
-                return ESP_FAIL;
-            }
-            return ESP_OK;
+            is_valid_topic = true;
+            break;
         }
     }
-    
-    return ESP_ERR_NOT_FOUND;
+
+    if (!is_valid_topic)
+    {
+        ESP_LOGW(TAG, "Invalid topic suffix: %s", topic_suffix);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Формируем полный топик: hostname/ledline/<topic_suffix>/status
+    int full_topic_len = strlen(hostname_str) + strlen("ledline/") + strlen(topic_suffix) + strlen("/status") + 2; // '/' + '\0'
+    char *full_topic = malloc(full_topic_len);
+    if (full_topic == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to allocate memory for full topic");
+        return ESP_ERR_NO_MEM;
+    }
+
+    int ret = snprintf(full_topic, full_topic_len, "%s/ledline/%s/status", hostname_str, topic_suffix);
+    if (ret < 0 || ret >= full_topic_len)
+    {
+        ESP_LOGE(TAG, "Topic string construction failed");
+        free(full_topic);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Публикуем сообщение
+    int msg_id = mqtt_client_publish(mqttClient, full_topic, payload, strlen(payload), 0, 0);
+
+    // Логируем до освобождения памяти
+    if (msg_id < 0)
+    {
+        ESP_LOGE(TAG, "Failed to publish to topic: %s", full_topic);
+        free(full_topic);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Published to topic: %s, payload: %s", full_topic, payload);
+    free(full_topic);
+    return ESP_OK;
 }

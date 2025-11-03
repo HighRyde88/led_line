@@ -5,7 +5,7 @@
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.portWin": "COM8",
+  "idf.portWin": "COM14",
   "idf.toolsPathWin": "D:\\Espressif\\.espressif",
   "idf.customExtraVars": {
     "OPENOCD_SCRIPTS": "C:\\Users\\Admin\\.espressif\\tools\\openocd-esp32\\v0.10.0-esp32-20190708/openocd-esp32/share/openocd/scripts",
@@ -89,6 +89,10 @@
     "bitset": "c",
     "algorithm": "c",
     "effects_ledline.h": "c",
-    "mqtt_ledline.h": "c"
+    "mqtt_ledline.h": "c",
+    "effects_support.h": "c",
+    "optional": "c",
+    "hsv.h": "c",
+    "rgb.h": "c"
   }
 }

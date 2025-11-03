@@ -18,75 +18,189 @@ typedef struct
 static bool state_manager(void *data);
 static bool color_manager(void *data);
 static bool brightness_manager(void *data);
+static bool mode_manager(void *data);
 
 static topic_manager_t topic_manager[] = {
     {"state", state_manager},
     {"color", color_manager},
-    {"brightness", brightness_manager}};
+    {"brightness", brightness_manager},
+    {"mode", mode_manager}};
 static uint8_t topic_manager_count = sizeof(topic_manager) / sizeof(topic_manager_t);
 //=================================================================
-typedef void (*effect_manager_func_t)(void *data);
+typedef uint8_t (*effect_manager_func_t)(void);
 
 typedef struct
 {
     const char *effect;
     const bool circular;
     const effect_manager_func_t effect_func;
+    const effect_manager_func_t effect_init;
 } effect_manager_t;
 
-static void static_effect(void *data);
+static uint8_t static_effect_init(void);
+static uint8_t static_effect(void);
+
+static uint8_t gradient_effect(void);
+
+static uint8_t rainbow_window_effect(void);
+static uint8_t rainbow_line_effect(void);
 
 static effect_manager_t effect_manager[] = {
-    {"static", true, static_effect}};
+    {"static", true, static_effect, static_effect_init},
+    {"gradient", true, gradient_effect, NULL},
+    {"rainbow_window", true, rainbow_window_effect, NULL},
+    {"rainbow_line", true, rainbow_line_effect, NULL}};
 static uint8_t effect_manager_count = sizeof(effect_manager) / sizeof(effect_manager_t);
+//=================================================================
+static hsv_t *led_buffer = NULL;
 
-static effect_manager_t *store_effect = NULL;
-static effect_manager_t *current_effect = NULL;
+effect_manager_t *current_effect = NULL;
+effect_manager_t *stored_effect = NULL;
 
-static rgb_t current_color = {0};
-static uint8_t current_brightness = 255;
+bool current_state = false;
+
+hsv_t current_color = {0};
+hsv_t temp_color = {0};
+
+uint8_t current_brightness = 0;
+uint8_t stored_brightness = 0;
+
+static void check_and_change_color(hsv_t color, const TickType_t delay, const uint16_t step);
 //=================================================================
 static bool state_manager(void *data)
 {
     if (data == NULL)
         return true;
 
-    char *state = (char *)data;
-    return false;
+    const char *state = (char *)data;
+    mqtt_publish_state("state", state);
+
+    if (strcmp(state, "enable") == 0)
+    {
+        if (current_effect == NULL && stored_effect != NULL)
+        {
+            current_effect = stored_effect;
+        }
+        else if (current_effect == NULL && stored_effect == NULL)
+        {
+            current_effect = &effect_manager[0];
+        }
+
+        stored_effect = NULL;
+
+        current_brightness = stored_brightness;
+        current_color.val = current_brightness;
+        current_state = true;
+    }
+    else if (strcmp(state, "disable") == 0)
+    {
+        current_brightness = 0;
+        current_color.val = 0;
+        current_state = false;
+    }
+
+    ESP_LOGI(TAG, "New state brightness: val - %d", current_brightness);
+
+    return true;
 }
 
+//=================================================================
 static bool color_manager(void *data)
 {
     if (data == NULL)
         return true;
-    current_effect = &effect_manager[0];
-    char *color_str = (char *)data;
-    uint32_t color_int = color_string_to_uint32(color_str);
-    current_color = rgb_from_code(color_int);
+
+    mqtt_publish_state("mode", "static");
+
+    const char *color_str = (char *)data;
+    mqtt_publish_state("color", color_str);
+
+    uint32_t color_int = color_from_hex(color_str);
+    current_color = color_to_hsv(color_int);
+    current_color.val = current_brightness;
+
+    if (current_state == true)
+    {
+        current_effect = &effect_manager[0];
+    }
+    else
+    {
+        stored_effect = &effect_manager[0];
+        memcpy(&temp_color, &current_color, sizeof(hsv_t));
+    }
+
+    ESP_LOGI(TAG, "New current color: HUE - %d, SAT - %d, VOL - %d",
+             current_color.hue, current_color.sat, current_color.val);
+
+    nvs_save_data("ledline", "color", (void *)&color_int, sizeof(color_int), NVS_TYPE_U32);
+
     return true;
 }
 
+//=================================================================
 static bool brightness_manager(void *data)
 {
     if (data == NULL)
         return true;
 
-    char *brightness_str = (char *)data;
+    const char *brightness_str = (char *)data;
+    mqtt_publish_state("brightness", brightness_str);
+
     uint8_t brightness_percent = atoi(brightness_str);
     current_brightness = (uint8_t)((brightness_percent * 255) / 100);
+    current_color.val = current_brightness;
+    stored_brightness = current_brightness;
+
+    ESP_LOGI(TAG, "New brightness: val - %d, percent - %d", current_brightness, brightness_percent);
+
+    nvs_save_data("ledline", "brightness", (void *)&current_brightness, sizeof(current_brightness), NVS_TYPE_U8);
+
     return true;
 }
+
 //=================================================================
-void task_effects(void *pvParameters)
+static bool mode_manager(void *data)
+{
+    if (data == NULL)
+        return true;
+
+    const char *mode_str = (char *)data;
+    mqtt_publish_state("mode", mode_str);
+
+    for (uint8_t m = 0; m < effect_manager_count; m++)
+    {
+        if (strcmp(mode_str, effect_manager[m].effect) == 0)
+        {
+            if (current_state == true)
+            {
+                current_effect = &effect_manager[m];
+            }
+            else
+            {
+                stored_effect = &effect_manager[m];
+            }
+
+            if (effect_manager[m].effect_init)
+            {
+                effect_manager[m].effect_init();
+            }
+
+            ESP_LOGI(TAG, "New current mode: %s", effect_manager[m].effect);
+            break;
+        }
+    }
+
+    return true;
+}
+
+//=================================================================
+void task_mqtt_ledline(void *pvParameters)
 {
     mqtt_data_t data_message = {0};
 
-    effect_manager_t *last_effect = NULL;
-    bool effect_executed_once = false;
-
     while (1)
     {
-        if (xQueueReceive(mqttQueue, &data_message, 100 / portTICK_PERIOD_MS) == pdTRUE)
+        if (xQueueReceive(mqttQueue, &data_message, 0xFFFFFFFF) == pdTRUE)
         {
             if (topic_list != NULL && topic_count > 0)
             {
@@ -110,16 +224,6 @@ void task_effects(void *pvParameters)
                                 }
 
                                 func_executed = true;
-
-                                if (current_effect != last_effect)
-                                {
-                                    last_effect = current_effect;
-                                }
-
-                                if (current_effect != NULL && !current_effect->circular)
-                                {
-                                    effect_executed_once = false;
-                                }
                             }
                         }
                     }
@@ -133,82 +237,242 @@ void task_effects(void *pvParameters)
                     }
                 }
             }
-        }
 
-        if (current_effect != NULL && current_effect->effect_func != NULL)
-        {
-            if (current_effect->circular)
+            // Освобождение topic, если оно было
+            if (data_message.topic != NULL)
             {
-                current_effect->effect_func(data_message.data);
-                // Обнуляем data после выполнения
-                if (data_message.data != NULL)
-                {
-                    free(data_message.data);  // освобождаем память
-                    data_message.data = NULL; // обнуляем указатель
-                }
-            }
-            else
-            {
-                if (!effect_executed_once)
-                {
-                    current_effect->effect_func(data_message.data);
-                    effect_executed_once = true;
-                    // Обнуляем data после выполнения
-                    if (data_message.data != NULL)
-                    {
-                        free(data_message.data);  // освобождаем память
-                        data_message.data = NULL; // обнуляем указатель
-                    }
-                }
-                else
-                {
-                    vTaskDelay(100 / portTICK_PERIOD_MS);
-                }
+                free(data_message.topic);
             }
         }
     }
 }
+
+//=================================================================
+static void task_effect_ledline(void *pvParameters)
+{
+    TickType_t xLastWakeTime = 0;
+
+    while (1)
+    {
+        xLastWakeTime = xTaskGetTickCount();
+        if (current_effect != NULL && current_effect->effect_func != NULL)
+        {
+            uint8_t delay = current_effect->effect_func();
+            vTaskDelayUntil(&xLastWakeTime, delay);
+            continue;
+        }
+        vTaskDelayUntil(&xLastWakeTime, 50);
+    }
+}
+
 //=================================================================
 void start_effects_ledline(void)
 {
-    uint32_t read_color = 0;
-    size_t required_size = 0;
-    esp_err_t result = nvs_load_data("ledline", "color", &read_color, &required_size, NVS_TYPE_U32);
 
-    if (result == ESP_OK)
+    led_buffer = malloc(sizeof(hsv_t) * leds_num);
+
+    if (led_buffer == NULL)
     {
-        current_color = rgb_from_code(read_color);
+        ESP_LOGI(TAG, "Buffer create failed, return...");
+        return;
+    }
+
+    // === Загрузка цвета ===
+    uint32_t read_color = 0;
+    size_t color_size = sizeof(read_color);
+    esp_err_t color_result = nvs_load_data("ledline", "color", &read_color, &color_size, NVS_TYPE_U32);
+
+    if (color_result == ESP_OK)
+    {
+        current_color = color_to_hsv(read_color);
         ESP_LOGI(TAG, "Color loaded from NVS: 0x%06X", read_color);
     }
-    else if (result == ESP_ERR_NVS_NOT_FOUND)
+    else if (color_result == ESP_ERR_NVS_NOT_FOUND)
     {
-        current_color = RGB_COLOR_DEFAULT();
+        current_color = color_to_hsv(0x00A849B3); // RGB_COLOR_DEFAULT()
         ESP_LOGW(TAG, "Color not found in NVS, using default color.");
     }
     else
     {
-        current_color = RGB_COLOR_DEFAULT();
-        ESP_LOGE(TAG, "Failed to load color from NVS: %s", esp_err_to_name(result));
+        current_color = color_to_hsv(0x00A849B3);
+        ESP_LOGE(TAG, "Failed to load color from NVS: %s", esp_err_to_name(color_result));
     }
-}
-//=================================================================
-static void change_static_color(rgb_t color)
-{
-    for (int i = 0; i <= 5; ++i)
+
+    // === Загрузка яркости ===
+    uint8_t read_brightness = 0;
+    size_t brightness_size = sizeof(read_brightness);
+    esp_err_t brightness_result = nvs_load_data("ledline", "brightness", &read_brightness, &brightness_size, NVS_TYPE_U8);
+
+    if (brightness_result == ESP_OK)
     {
-        fract16 frac = (fract16)((65535 * i) / 5);
-        rgb_t result = rgb_lerp16(1, color, frac);
+        stored_brightness = read_brightness;
+        ESP_LOGI(TAG, "Brightness loaded from NVS: %d", stored_brightness);
+    }
+    else if (brightness_result == ESP_ERR_NVS_NOT_FOUND)
+    {
+        // Используем яркость из загруженного/дефолтного цвета
+        stored_brightness = 255;
+        ESP_LOGW(TAG, "Brightness not found in NVS, using color's value: %d", stored_brightness);
+    }
+    else
+    {
+        stored_brightness = 255;
+        ESP_LOGE(TAG, "Failed to load brightness from NVS: %s", esp_err_to_name(brightness_result));
+    }
+
+    ESP_LOGI(TAG, "Initial state: HUE=%d, SAT=%d, VAL=%d",
+             current_color.hue, current_color.sat, current_color.val);
+
+    stored_effect = &effect_manager[0];
+
+    led_strip_clear(led_strip);
+
+    memcpy(&temp_color, &current_color, sizeof(hsv_t));
+    temp_color.val = 0;
+
+    xTaskCreate(task_effect_ledline, "task_effect_ledline", 4096, NULL, 5, NULL);
+}
+
+//=================================================================
+static void check_and_change_color(hsv_t color, const TickType_t delay, const uint16_t step)
+{
+    if (color_hsv_equal(&temp_color, &color))
+    {
+        return;
+    }
+
+    hsv_interpolation_state_t interp_state = {0};
+
+    if (step == 0)
+    {
+        temp_color = color;
+        for (uint32_t led = 0; led < leds_num; led++)
+        {
+            led_strip_set_pixel_hsv(led_strip, led, temp_color.hue, temp_color.sat, temp_color.val);
+        }
+        led_strip_refresh(led_strip);
+        return;
+    }
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    while (!color_hsv_equal(&temp_color, &color))
+    {
+        hsv_interpolate_step(&temp_color, &color, step, &interp_state);
 
         for (uint32_t led = 0; led < leds_num; led++)
         {
-            led_strip_set_pixel(led_strip, led, result.red, result.green, result.blue);
+            led_strip_set_pixel_hsv(led_strip, led, temp_color.hue, temp_color.sat, temp_color.val);
         }
         led_strip_refresh(led_strip);
 
-        vTaskDelay(20 / portTICK_PERIOD_MS);
+        if (delay)
+        {
+            vTaskDelayUntil(&xLastWakeTime, delay);
+        }
     }
 }
-static void static_effect(void *data)
-{
 
+//=================================================================
+static uint8_t static_effect_init(void)
+{
+    uint32_t color_int = color_from_hsv(current_color);
+    char color_str[16] = {0};
+    snprintf(color_str, sizeof(color_str), "#%06lX", color_int & 0x00FFFFFF);
+    mqtt_publish_state("color", color_str);
+    return 0;
 }
+
+static uint8_t static_effect(void)
+{
+    check_and_change_color(current_color, 1, 25);
+
+    if (current_state == false && stored_effect == NULL)
+    {
+        stored_effect = current_effect;
+        current_effect = NULL;
+    }
+
+    return 5;
+}
+
+//=================================================================
+static uint8_t gradient_effect(void)
+{
+    check_and_change_color(current_color, 1, 25);
+
+    if (current_state == false && stored_effect == NULL)
+    {
+        stored_effect = current_effect;
+        current_effect = NULL;
+    }
+    else
+    {
+        current_color.hue = (current_color.hue + 1) % 360;
+
+        for (uint32_t led = 0; led < leds_num; led++)
+        {
+            led_strip_set_pixel_hsv(led_strip, led, current_color.hue, current_color.sat, current_color.val);
+        }
+        led_strip_refresh(led_strip);
+
+        memcpy(&temp_color, &current_color, sizeof(hsv_t));
+    }
+
+    return 5;
+}
+
+//=================================================================
+static uint8_t rainbow_window_effect(void)
+{
+    check_and_change_color(current_color, 1, 25);
+
+    static uint16_t hue_start = 0;
+
+    for (uint32_t led = 0; led < leds_num; led++)
+    {
+        uint16_t hue = (hue_start + led) % 360;
+        led_strip_set_pixel_hsv(led_strip, led, hue, current_color.sat, current_color.val);
+    }
+
+    led_strip_refresh(led_strip);
+
+    hue_start = (hue_start + 1) % 360;
+
+    if (current_state == false && stored_effect == NULL)
+    {
+        stored_effect = current_effect;
+        current_effect = NULL;
+    }
+
+    return 5;
+}
+
+//=================================================================
+static uint8_t rainbow_line_effect(void)
+{
+    check_and_change_color(current_color, 1, 25);
+
+    static uint16_t hue_offset = 0;
+
+    for (uint32_t led = 0; led < leds_num; led++)
+    {
+        uint16_t hue = (led * 360 / leds_num + hue_offset) % 360;
+
+        led_strip_set_pixel_hsv(led_strip, led, hue, current_color.sat, current_color.val);
+    }
+
+    led_strip_refresh(led_strip);
+
+    hue_offset = (hue_offset + 1) % 360;
+
+    if (current_state == false && stored_effect == NULL)
+    {
+        stored_effect = current_effect;
+        current_effect = NULL;
+    }
+
+    return 5;
+}
+
+//=================================================================

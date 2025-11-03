@@ -284,7 +284,6 @@ esp_err_t dw_resources_init(void)
 {
     // Инициализация сетевого стека
     ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
     // Инициализация Wi-Fi
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -356,6 +355,7 @@ void dw_wifi_cleanup(void)
         }
         return;
     }
+
     // Безопасная очистка с мьютексом
     if (ap_list)
     {

@@ -1,17 +1,19 @@
-#include "captive_portal.h"
-#include "nvs_settings.h"
-#include "driver/gpio.h"
-#include "freertos/FreeRTOS.h"
-
 #include "esp_log.h"
-#include "esp_system.h"
-#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
+#include "captive_portal.h"
 #include "wifi.h"
 #include "dwnvs.h"
-
 #include "ledline/ledline.h"
 #include "ledline/mqtt_ledline.h"
+
+#define BOOT_RESET_THRESHOLD_MS   2000  // Время ожидания (мс)
+#define BOOT_RESET_COUNT_TRIGGER  2     // Количество включений
+
+static const char *TAG = "BootCheck";
+
 //=================================================================
 static void sta_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -26,6 +28,9 @@ static void sta_event_handler(void *arg, esp_event_base_t event_base, int32_t ev
         mqtt_ledline_resources_init();
         dw_set_user_sta_event_handler(NULL);
     }
+    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED)
+    {
+    }
 }
 
 //================================================================
@@ -34,10 +39,11 @@ static esp_err_t sta_connect_attempt(void)
     // Проверяем, подключено ли устройство к Wi-Fi сети (AP + IP)
     if (dw_check_wifi_connection_status() != ESP_OK)
     {
-
         wifi_sta_config_t sta_config = {0};
         if (dwnvs_load_sta_config(&sta_config) == ESP_OK)
         {
+            dw_resources_init();
+            dw_station_stop();
             if (dw_station_connect(&sta_config, sta_event_handler, NULL) == ESP_OK)
             {
                 return ESP_OK; // Успешно начали процесс подключения
@@ -60,20 +66,45 @@ static esp_err_t sta_connect_attempt(void)
 }
 
 //================================================================
+static bool check_factory_reset_mode()
+{
+    int reset_count = 0;
+
+    size_t len = sizeof(reset_count);
+    if (nvs_load_data("boot", "reset_count", &reset_count, &len, NVS_TYPE_I32) != ESP_OK) {
+        reset_count = 0;
+    }
+
+    if (reset_count >= BOOT_RESET_COUNT_TRIGGER) {
+        ESP_LOGI(TAG, "Factory reset mode triggered!");
+        reset_count = 0;
+        nvs_save_data("boot", "reset_count", &reset_count, sizeof(reset_count), NVS_TYPE_I32);
+        return true;
+    }
+
+    reset_count++;
+
+    nvs_save_data("boot", "reset_count", &reset_count, sizeof(reset_count), NVS_TYPE_I32);
+
+    vTaskDelay(pdMS_TO_TICKS(BOOT_RESET_THRESHOLD_MS));
+
+    reset_count = 0;
+    nvs_save_data("boot", "reset_count", &reset_count, sizeof(reset_count), NVS_TYPE_I32);
+
+    return false;
+}
+
+//================================================================
 void app_main(void)
 {
     nvs_storage_initialization();
 
-    gpio_reset_pin(GPIO_NUM_36);
-    gpio_set_direction(GPIO_NUM_36, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(GPIO_NUM_39, GPIO_PULLUP_ONLY);
+    bool forced_launch = check_factory_reset_mode(); // <-- проверка
 
-    //bool forced_launch = !gpio_get_level(GPIO_NUM_36);
-    bool forced_launch = false;
-
-    portal_start_with_sta_attempt("Ledline_config", "", forced_launch, sta_connect_attempt);
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     ledline_resources_init();
+    portal_start_with_sta_attempt("Ledline_config", "", forced_launch, sta_connect_attempt);
 
     while (1)
     {

@@ -71,7 +71,7 @@ esp_err_t ledline_resources_init(void)
     ESP_LOGI(TAG, "Initializing LED strip resources...");
 
     uint32_t lednum = 60;
-    uint32_t ledpin = GPIO_NUM_27;
+    uint32_t ledpin = GPIO_NUM_0;
 
     char lednum_str[8] = {0};
     char ledpin_str[8] = {0};

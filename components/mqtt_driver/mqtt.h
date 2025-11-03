@@ -15,25 +15,26 @@ extern "C"
      * Содержит параметры, необходимые для инициализации MQTT-клиента.
      * Используется в mqtt_client_start.
      */
-    typedef struct {
-        char *server_uri;       /*!< URI брокера, например "mqtt://host:port" */
-        char *username;         /*!< Имя пользователя (может быть NULL) */
-        char *password;         /*!< Пароль (может быть NULL) */
-        char *client_id;        /*!< Идентификатор клиента (если NULL или пустой, генерируется автоматически) */
-        char *lwt_topic;        /*!< Топик Last Will и Testament (может быть NULL) */
-        char *lwt_msg;          /*!< Сообщение LWT (если NULL, LWT отключено) */
-        int lwt_qos;            /*!< QoS для LWT (по умолчанию 0) */
-        int lwt_retain;         /*!< Флаг retain для LWT (по умолчанию 0) */
-        int keepalive;          /*!< Интервал keepalive в секундах (по умолчанию 60) */
+    typedef struct
+    {
+        char *server_uri;           /*!< URI брокера, например "mqtt://host:port" */
+        char *username;             /*!< Имя пользователя (может быть NULL) */
+        char *password;             /*!< Пароль (может быть NULL) */
+        char *client_id;            /*!< Идентификатор клиента (если NULL или пустой, генерируется автоматически) */
+        char *lwt_topic;            /*!< Топик Last Will и Testament (может быть NULL) */
+        char *lwt_msg;              /*!< Сообщение LWT (если NULL, LWT отключено) */
+        int lwt_qos;                /*!< QoS для LWT (по умолчанию 0) */
+        int lwt_retain;             /*!< Флаг retain для LWT (по умолчанию 0) */
+        int keepalive;              /*!< Интервал keepalive в секундах (по умолчанию 60) */
         bool disable_clean_session; /*!< Отключить clean session (по умолчанию false) */
-        int reconnect_timeout_sec;  /*!< Таймаут переподключения в секундах (по умолчанию 5) */
+        int reconnect_timeout;      /*!< Таймаут переподключения в миллисекундах (по умолчанию 500) */
         bool auto_reconnect;        /*!< Включить автоподключение (по умолчанию true) */
     } mqtt_config_t;
 
     /**
      * @brief Тип данных для обработки событий MQTT
      */
-    typedef void* mqtt_client_handle_t;  // ✅ Используем void*, т.к. это указатель на mqtt_client_data_t
+    typedef void *mqtt_client_handle_t; // ✅ Используем void*, т.к. это указатель на mqtt_client_data_t
 
     /**
      * @brief Инициализация и запуск MQTT-клиента

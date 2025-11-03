@@ -122,7 +122,7 @@ mqtt_client_handle_t mqtt_client_start(const mqtt_config_t *config, esp_event_ha
         .session.disable_clean_session = config->disable_clean_session,
         .session.keepalive = config->keepalive > 0 ? config->keepalive : 60,
         .network.disable_auto_reconnect = !config->auto_reconnect,
-        .network.reconnect_timeout_ms = (config->reconnect_timeout_sec > 0 ? config->reconnect_timeout_sec : 5) * 1000,
+        .network.reconnect_timeout_ms = (config->reconnect_timeout > 0 ? config->reconnect_timeout : 500),
     };
 
     esp_mqtt_client_handle_t mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
