@@ -27,10 +27,6 @@ extern "C"
         bool active;
     } hsv_interpolation_state_t;
 
-    extern bool current_state;
-    extern hsv_t current_color;
-    extern uint8_t stored_brightness;
-
     void start_effects_ledline(void);
     void task_mqtt_ledline(void *pvParameters);
 
@@ -40,7 +36,9 @@ extern "C"
     hsv_t color_to_hsv(uint32_t color);
     uint32_t color_from_hsv(hsv_t hsv);
     bool color_hsv_equal(const hsv_t *a, const hsv_t *b);
-    void hsv_interpolate_step(hsv_t *current, const hsv_t *target, uint16_t total_steps, hsv_interpolation_state_t *state);
+
+    bool color_hsv_interpolate(hsv_t *current, const hsv_t *target, const uint8_t step);
+
 
 #ifdef __cplusplus
 }

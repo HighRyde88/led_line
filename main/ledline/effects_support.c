@@ -200,72 +200,128 @@ bool color_hsv_equal(const hsv_t *a, const hsv_t *b)
     }
     return (a->hue == b->hue) && (a->sat == b->sat) && (a->val == b->val);
 }
+
 //=================================================================
-void hsv_interpolate_step(hsv_t *current, const hsv_t *target, uint16_t total_steps, hsv_interpolation_state_t *state)
+bool color_hsv_interpolate(hsv_t *current, const hsv_t *target, const uint8_t step)
 {
-    if (!current || !target || !state)
+    if (!current || !target)
     {
-        return;
+        return false;
     }
 
-    // Если изменились параметры — сбросить состояние
-    if (!color_hsv_equal(&state->target, target) || state->total_steps != total_steps)
+    if (color_hsv_equal(current, target) == true)
     {
-        state->start = *current;
-        state->target = *target;
-        state->total_steps = (total_steps == 0) ? 1 : total_steps;
-        state->step = 0;
-        state->active = true;
+        return false;
     }
 
-    if (!state->active)
+    uint32_t current_rgb = color_from_hsv(*current);
+    uint32_t target_rgb = color_from_hsv(*target);
+
+    uint8_t cr = (current_rgb >> 16) & 0xFF;
+    uint8_t cg = (current_rgb >> 8) & 0xFF;
+    uint8_t cb = current_rgb & 0xFF;
+
+    uint8_t tr = (target_rgb >> 16) & 0xFF;
+    uint8_t tg = (target_rgb >> 8) & 0xFF;
+    uint8_t tb = target_rgb & 0xFF;
+
+    bool changed = false;
+
+    if (tr > cr)
     {
-        *current = state->target;
-        return;
+        if (tr - cr > step)
+        {
+            cr += step;
+            changed = true;
+        }
+        else
+        {
+            cr = tr;
+            changed = true;
+        }
+    }
+    else if (tr < cr)
+    {
+        if (cr - tr > step)
+        {
+            cr -= step;
+            changed = true;
+        }
+        else
+        {
+            cr = tr;
+            changed = true;
+        }
     }
 
-    if (state->step >= state->total_steps)
+    if (tg > cg)
     {
-        *current = state->target;
-        state->active = false;
-        return;
+        if (tg - cg > step)
+        {
+            cg += step;
+            changed = true;
+        }
+        else
+        {
+            cg = tg;
+            changed = true;
+        }
+    }
+    else if (tg < cg)
+    {
+        if (cg - tg > step)
+        {
+            cg -= step;
+            changed = true;
+        }
+        else
+        {
+            cg = tg;
+            changed = true;
+        }
     }
 
-    const uint16_t HUE_MAX = 360;
-
-    // Разница по hue с учётом кратчайшего пути
-    int16_t hue_diff = (int16_t)state->target.hue - (int16_t)state->start.hue;
-    if (hue_diff > 180)
+    if (tb > cb)
     {
-        hue_diff -= HUE_MAX;
+        if (tb - cb > step)
+        {
+            cb += step;
+            changed = true;
+        }
+        else
+        {
+            cb = tb;
+            changed = true;
+        }
     }
-    else if (hue_diff < -180)
+    else if (tb < cb)
     {
-        hue_diff += HUE_MAX;
+        if (cb - tb > step)
+        {
+            cb -= step;
+            changed = true;
+        }
+        else
+        {
+            cb = tb;
+            changed = true;
+        }
     }
 
-    // Прогресс: от 0.0 до 1.0
-    float t = (float)(state->step + 1) / state->total_steps;
+    uint32_t new_rgb = (0xFFU << 24) | ((uint32_t)cr << 16) | ((uint32_t)cg << 8) | (uint32_t)cb;
 
-    // Интерполяция hue
-    int32_t new_hue = (int32_t)state->start.hue + (int32_t)(t * hue_diff + 0.5f);
-    new_hue = (new_hue % HUE_MAX + HUE_MAX) % HUE_MAX;
+    hsv_t new_hsv = color_to_hsv(new_rgb);
 
-    // Интерполяция sat и val
-    uint8_t new_sat = (uint8_t)((1.0f - t) * state->start.sat + t * state->target.sat + 0.5f);
-    uint8_t new_val = (uint8_t)((1.0f - t) * state->start.val + t * state->target.val + 0.5f);
-
-    current->hue = (uint16_t)new_hue;
-    current->sat = new_sat;
-    current->val = new_val;
-
-    state->step++;
-
-    // Если интерполяция завершена — фиксируем результат
-    if (state->step >= state->total_steps)
+    if (new_rgb == 0xFF000000)
     {
-        *current = state->target;
-        state->active = false;
+        new_hsv.val = 0;
+        new_hsv.hue = target->hue;
+        new_hsv.sat = target->sat;
+        changed = true; // Убедимся, что возвращаем true, если RGB стал чёрным
     }
+
+    *current = new_hsv;
+
+    return changed;
 }
 //=================================================================

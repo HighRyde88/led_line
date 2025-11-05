@@ -36,6 +36,7 @@ static void sta_event_handler(void *arg, esp_event_base_t event_base, int32_t ev
 //================================================================
 static esp_err_t sta_connect_attempt(void)
 {
+    ledline_resources_init();
     // Проверяем, подключено ли устройство к Wi-Fi сети (AP + IP)
     if (dw_check_wifi_connection_status() != ESP_OK)
     {
@@ -103,7 +104,6 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    ledline_resources_init();
     portal_start_with_sta_attempt("Ledline_config", "", forced_launch, sta_connect_attempt);
 
     while (1)
