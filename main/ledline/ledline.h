@@ -16,6 +16,8 @@ extern "C"
 {
 #endif
 
+    extern QueueHandle_t mqttQueue;
+
     extern uint32_t leds_num;
     extern led_strip_handle_t led_strip;
     

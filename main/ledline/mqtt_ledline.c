@@ -22,7 +22,6 @@ static const int default_topic_count = 5;
 
 static const char *TAG = "led_strip_mqtt";
 
-QueueHandle_t mqttQueue = NULL;
 mqtt_client_handle_t mqttClient = NULL;
 
 //=================================================================
@@ -324,13 +323,6 @@ esp_err_t mqtt_ledline_resources_init(void)
                 .auto_reconnect = true,
             };
 
-            mqttQueue = xQueueCreate(8, sizeof(mqtt_data_t));
-            if (mqttQueue == NULL)
-            {
-                ESP_LOGE(TAG, "Failed to create MQTT queue");
-                return ESP_ERR_NO_MEM;
-            }
-
             ledline_set_mqtt_topics();
 
             if (topic_count == 0 || topic_list == NULL)
@@ -345,17 +337,6 @@ esp_err_t mqtt_ledline_resources_init(void)
             if (mqttClient == NULL)
             {
                 ESP_LOGE(TAG, "Failed to start MQTT client");
-                vQueueDelete(mqttQueue);
-                mqttQueue = NULL;
-                return ESP_FAIL;
-            }
-
-            BaseType_t task_result = xTaskCreate(task_mqtt_ledline, "task_mqtt_ledline", 4096, NULL, 5, NULL);
-            if (task_result != pdPASS)
-            {
-                ESP_LOGE(TAG, "Failed to create LED effects task");
-                mqtt_client_stop(mqttClient);
-                mqttClient = NULL;
                 vQueueDelete(mqttQueue);
                 mqttQueue = NULL;
                 return ESP_FAIL;

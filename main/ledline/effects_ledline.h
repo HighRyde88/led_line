@@ -28,7 +28,6 @@ extern "C"
     } hsv_interpolation_state_t;
 
     void start_effects_ledline(void);
-    void task_mqtt_ledline(void *pvParameters);
 
     // Support functions
     uint32_t color_from_hex(const char *hex_str);

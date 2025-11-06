@@ -2,10 +2,13 @@
 #include "effects_ledline.h"
 #include "server/modules/data_parser.h"
 #include "nvs_settings.h"
+#include "esp_err.h"
 
 #define ITEMS_COUNT (3)
 
 static const char *TAG = "Led effects";
+
+QueueHandle_t mqttQueue = NULL;
 //=================================================================
 typedef bool (*topic_manager_func_t)(void *data);
 
@@ -245,10 +248,18 @@ static void task_effect_ledline(void *pvParameters)
 }
 
 //=================================================================
-void task_mqtt_ledline(void *pvParameters)
+static void task_mqtt_ledline(void *pvParameters)
 {
     mqtt_data_t data_message = {0};
     TickType_t xLastWakeTime = 0;
+
+    mqttQueue = xQueueCreate(8, sizeof(mqtt_data_t));
+    if (mqttQueue == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create MQTT queue");
+        return;
+    }
+
     while (1)
     {
         xLastWakeTime = xTaskGetTickCount();
@@ -325,7 +336,6 @@ void start_effects_ledline(void)
         return;
     }
 
-    // === Загрузка цвета ===
     uint32_t read_color = 0;
     size_t color_size = sizeof(read_color);
     esp_err_t color_result = nvs_load_data("ledline", "color", &read_color, &color_size, NVS_TYPE_U32);
@@ -346,7 +356,6 @@ void start_effects_ledline(void)
         ESP_LOGE(TAG, "Failed to load color from NVS: %s", esp_err_to_name(color_result));
     }
 
-    // === Загрузка яркости ===
     uint8_t read_brightness = 0;
     size_t brightness_size = sizeof(read_brightness);
     esp_err_t brightness_result = nvs_load_data("ledline", "brightness", &read_brightness, &brightness_size, NVS_TYPE_U8);
@@ -358,7 +367,6 @@ void start_effects_ledline(void)
     }
     else if (brightness_result == ESP_ERR_NVS_NOT_FOUND)
     {
-        // Используем яркость из загруженного/дефолтного цвета
         stored_brightness = 255;
         ESP_LOGW(TAG, "Brightness not found in NVS, using color's value: %d", stored_brightness);
     }
@@ -375,11 +383,13 @@ void start_effects_ledline(void)
 
     led_strip_clear(led_strip);
 
-    xTaskCreate(task_effect_ledline, "task_effect_ledline", 4096, NULL, 4, NULL);
+    xTaskCreate(task_effect_ledline, "task_effect_ledline", 4096, NULL, 5, NULL);
+
+    xTaskCreate(task_mqtt_ledline, "task_mqtt_ledline", 4096, NULL, 4, NULL);
 }
 
 //=================================================================
-static void leds_buffer_synchronization(const hsv_t *target)
+static void set_buffer_from_target(const hsv_t *target, bool auto_refresh)
 {
     TickType_t xLastWakeTime = 0;
     while (1)
@@ -394,13 +404,17 @@ static void leds_buffer_synchronization(const hsv_t *target)
             }
         }
 
-        is_need_update = true;
+        is_need_update = auto_refresh;
 
         if (!need_loop)
         {
             break;
         }
-        vTaskDelayUntil(&xLastWakeTime, 30 / portTICK_PERIOD_MS);
+
+        if (auto_refresh)
+        {
+            vTaskDelayUntil(&xLastWakeTime, 30 / portTICK_PERIOD_MS);
+        }
     }
 }
 
@@ -416,7 +430,8 @@ static uint8_t static_effect_init(void)
 
 static uint8_t static_effect(void)
 {
-    leds_buffer_synchronization(&target_color);
+    set_buffer_from_target(&target_color, true);
+
     if (current_state == false && stored_effect == NULL)
     {
         stored_effect = current_effect;
@@ -430,7 +445,7 @@ static uint8_t static_effect(void)
 static uint8_t gradient_effect_init(void)
 {
     target_color.sat = 255;
-    leds_buffer_synchronization(&target_color);
+    set_buffer_from_target(&target_color, true);
     return 0;
 }
 
@@ -441,7 +456,7 @@ static uint8_t gradient_effect(void)
         target_color.hue = (target_color.hue + 1) % 360;
     }
 
-    leds_buffer_synchronization(&target_color);
+    set_buffer_from_target(&target_color, true);
 
     if (current_state == false && stored_effect == NULL)
     {
@@ -453,76 +468,13 @@ static uint8_t gradient_effect(void)
 }
 
 //=================================================================
-/*static uint8_t rainbow_effect(void)
-{
-    static hsv_t temp_color = {0};
-
-    temp_color.sat = 255;
-    temp_color.val = target_color.val;
-
-    bool need_loop = false;
-    static uint16_t hue_start = 0;
-
-    for (uint16_t led = 0; led < leds_num; led++)
-    {
-        temp_color.hue = (hue_start + led) % 360;
-
-        if (color_hsv_interpolate(&led_buffer[led], &temp_color, 25))
-        {
-            need_loop = true;
-        }
-
-        is_need_update = true;
-
-        if (!need_loop)
-        {
-            break;
-        }
-    }
-
-    hue_start = (hue_start + 1) % 360;
-
-     if (current_state == false && stored_effect == NULL)
-    {
-        stored_effect = current_effect;
-        current_effect = NULL;
-    }
-    return 0;
-}*/
-
 static uint8_t rainbow_effect(void)
 {
-    static hsv_t temp_color = {0};
-
-    temp_color.sat = 255;
-    temp_color.val = target_color.val;
-
-    bool need_loop = false;
-    static uint16_t hue_offset = 0;
-
-    for (uint16_t led = 0; led < leds_num; led++)
-    {
-        temp_color.hue = (led * 360 / leds_num + hue_offset) % 360;
-
-        if (color_hsv_interpolate(&led_buffer[led], &temp_color, 25))
-        {
-            need_loop = true;
-        }
-
-        is_need_update = true;
-
-        if (!need_loop)
-        {
-            break;
-        }
-    }
-
-    hue_offset = (hue_offset + 1) % 360;
-
     if (current_state == false && stored_effect == NULL)
     {
         stored_effect = current_effect;
         current_effect = NULL;
     }
+
     return 0;
 }

@@ -10,6 +10,7 @@
 #include "mqtt.h"
 #include "nvs_settings.h"
 #include "driver/gpio.h"
+#include "ledline.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -21,8 +22,6 @@ extern "C"
         char *topic;
         void *data;
     } mqtt_data_t;
-
-    extern QueueHandle_t mqttQueue;
 
     extern int topic_count;
     extern char **topic_list;
