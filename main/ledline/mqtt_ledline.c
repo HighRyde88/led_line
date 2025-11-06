@@ -16,8 +16,9 @@ static const char *default_topics[] = {
     "ledline/state",
     "ledline/color",
     "ledline/brightness",
-    "ledline/mode"};
-static const int default_topic_count = 4;
+    "ledline/mode",
+    "ledline/pause"};
+static const int default_topic_count = 5;
 
 static const char *TAG = "led_strip_mqtt";
 
@@ -121,7 +122,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             }
             isSubscribed = true;
 
-            /*            
+            /*
             mqtt_publish_state("state", current_state ? "enable" : "disable");
 
             char brightness_str[4] = {0};
