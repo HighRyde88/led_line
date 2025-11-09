@@ -6,9 +6,13 @@
 
 #define ITEMS_COUNT (3)
 
+#define LEDLINE_REFRESH (BIT0)
+#define LEDLINE_CLEAR (BIT1)
+
 static const char *TAG = "Led effects";
 
 QueueHandle_t mqttQueue = NULL;
+static EventGroupHandle_t ledlineEvent = NULL;
 //=================================================================
 typedef bool (*topic_manager_func_t)(void *data);
 
@@ -48,16 +52,16 @@ static uint8_t static_effect(void);
 static uint8_t gradient_effect_init(void);
 static uint8_t gradient_effect(void);
 
-static uint8_t rainbow_effect(void);
+static uint8_t rainbow_effect_init(void);
+static uint8_t gradient_effect(void);
 
 static effect_manager_t effect_manager[] = {
     {"static", true, static_effect, static_effect_init},
     {"gradient", true, gradient_effect, gradient_effect_init},
-    {"rainbow", true, rainbow_effect, NULL}};
+    {"rainbow", true, gradient_effect, rainbow_effect_init}};
 static uint8_t effect_manager_count = sizeof(effect_manager) / sizeof(effect_manager_t);
 //=================================================================
 static hsv_t *led_buffer = NULL;
-static bool is_need_update = false;
 
 effect_manager_t *current_effect = NULL;
 effect_manager_t *stored_effect = NULL;
@@ -221,11 +225,11 @@ static bool pause_manager(void *data)
 }
 
 //=================================================================
-static void ledstrip_fill_buffer(void)
+static void ledstrip_write_buffer(const hsv_t *buffer)
 {
     for (uint16_t led = 0; led < leds_num; led++)
     {
-        led_strip_set_pixel_hsv(led_strip, led, led_buffer[led].hue, led_buffer[led].sat, led_buffer[led].val);
+        led_strip_set_pixel_hsv(led_strip, led, buffer[led].hue, buffer[led].sat, buffer[led].val);
     }
     led_strip_refresh(led_strip);
 }
@@ -233,16 +237,27 @@ static void ledstrip_fill_buffer(void)
 //=================================================================
 static void task_effect_ledline(void *pvParameters)
 {
-    TickType_t xLastWakeTime = 0;
+    if (ledlineEvent == NULL)
+    {
+        ledlineEvent = xEventGroupCreate();
+        if (ledlineEvent == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to create portal event status");
+        }
+    }
+
     while (1)
     {
-        xLastWakeTime = xTaskGetTickCount();
-        if (is_need_update)
+        EventBits_t bits = xEventGroupWaitBits(ledlineEvent, LEDLINE_REFRESH, true, pdTRUE, 0xFFFFFFFF);
+        if (bits & LEDLINE_REFRESH)
         {
-            ledstrip_fill_buffer();
-            is_need_update = false;
+            ledstrip_write_buffer(led_buffer);
         }
-        vTaskDelayUntil(&xLastWakeTime, 30 / portTICK_PERIOD_MS);
+        else if (bits & LEDLINE_CLEAR)
+        {
+            led_strip_clear(led_strip);
+            led_strip_refresh(led_strip);
+        }
     }
     vTaskDelete(NULL);
 }
@@ -300,6 +315,12 @@ static void task_mqtt_ledline(void *pvParameters)
                             free(items[k]);
                         }
                     }
+                }
+
+                if (!func_executed && data_message.data != NULL)
+                {
+                    free(data_message.data);
+                    data_message.data = NULL;
                 }
             }
 
@@ -389,48 +410,39 @@ void start_effects_ledline(void)
 }
 
 //=================================================================
-static void set_buffer_from_target(const hsv_t *target, bool auto_refresh)
+static bool fill_buffer_from_target_interpolate(const hsv_t *target)
 {
-    TickType_t xLastWakeTime = 0;
-    while (1)
+    bool need_loop = false;
+
+    for (uint16_t leds = 0; leds < leds_num; leds++)
     {
-        bool need_loop = false;
-        xLastWakeTime = xTaskGetTickCount();
-        for (uint16_t leds = 0; leds < leds_num; leds++)
+        if (color_hsv_interpolate(&led_buffer[leds], target, 25))
         {
-            if (color_hsv_interpolate(&led_buffer[leds], target, 25))
-            {
-                need_loop = true;
-            }
-        }
-
-        is_need_update = auto_refresh;
-
-        if (!need_loop)
-        {
-            break;
-        }
-
-        if (auto_refresh)
-        {
-            vTaskDelayUntil(&xLastWakeTime, 30 / portTICK_PERIOD_MS);
+            need_loop = true;
         }
     }
+
+    return need_loop;
 }
 
 //=================================================================
 static uint8_t static_effect_init(void)
 {
-    uint32_t color_int = color_from_hsv(target_color);
     char color_str[16] = {0};
-    snprintf(color_str, sizeof(color_str), "#%06lX", color_int & 0x00FFFFFF);
+    snprintf(color_str, sizeof(color_str), "#%06lX", color_from_hsv(target_color) & 0x00FFFFFF);
     mqtt_publish_state("color", color_str);
     return 0;
 }
 
 static uint8_t static_effect(void)
 {
-    set_buffer_from_target(&target_color, true);
+    uint8_t delay = 20;
+
+    if (fill_buffer_from_target_interpolate(&target_color))
+    {
+        xEventGroupSetBits(ledlineEvent, LEDLINE_REFRESH);
+        return delay;
+    }
 
     if (current_state == false && stored_effect == NULL)
     {
@@ -438,25 +450,27 @@ static uint8_t static_effect(void)
         current_effect = NULL;
     }
 
-    return 0;
+    return delay;
 }
 
 //=================================================================
 static uint8_t gradient_effect_init(void)
 {
     target_color.sat = 255;
-    set_buffer_from_target(&target_color, true);
     return 0;
 }
 
 static uint8_t gradient_effect(void)
 {
-    if (!current_pause)
-    {
-        target_color.hue = (target_color.hue + 1) % 360;
-    }
+    uint8_t delay = 20;
 
-    set_buffer_from_target(&target_color, true);
+    target_color.hue = current_state ? (target_color.hue + 1) % 360 : target_color.hue;
+
+    if (fill_buffer_from_target_interpolate(&target_color))
+    {
+        xEventGroupSetBits(ledlineEvent, LEDLINE_REFRESH);
+        return delay;
+    }
 
     if (current_state == false && stored_effect == NULL)
     {
@@ -464,17 +478,16 @@ static uint8_t gradient_effect(void)
         current_effect = NULL;
     }
 
-    return 0;
+    return delay;
 }
 
 //=================================================================
+static uint8_t rainbow_effect_init(void)
+{
+    return 0;
+}
+
 static uint8_t rainbow_effect(void)
 {
-    if (current_state == false && stored_effect == NULL)
-    {
-        stored_effect = current_effect;
-        current_effect = NULL;
-    }
-
     return 0;
 }
