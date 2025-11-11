@@ -1,25 +1,26 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "d:\\Espressif\\frameworks\\esp-idf-v5.5.1",
-  "idf.pythonInstallPath": "D:\\Espressif\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.espIdfPathWin": "d:\\esp\\v5.5.1\\esp-idf",
+  "idf.pythonInstallPath": "D:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
-    "board/esp32s3-builtin.cfg"
+    "interface/ftdi/esp_ftdi.cfg",
+    "target/esp32.cfg"
   ],
-  "idf.portWin": "COM8",
-  "idf.toolsPathWin": "D:\\Espressif\\.espressif",
+  "idf.portWin": "COM24",
+  "idf.toolsPathWin": "D:\\Espressif",
   "idf.customExtraVars": {
     "OPENOCD_SCRIPTS": "C:\\Users\\Admin\\.espressif\\tools\\openocd-esp32\\v0.10.0-esp32-20190708/openocd-esp32/share/openocd/scripts",
     "IDF_CCACHE_ENABLE": "1",
     "ESP_ROM_ELF_DIR": "d:\\Espressif\\tools\\esp-rom-elfs\\20240305/",
-    "IDF_TARGET": "esp32s3"
+    "IDF_TARGET": "esp32"
   },
-  "clangd.path": "D:\\Espressif\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.path": "D:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
   "clangd.arguments": [
     "--background-index",
-    "--query-driver=D:\\Espressif\\.espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
-    "--compile-commands-dir=c:\\Users\\Admin\\Documents\\esp32\\led_line\\build"
+    "--query-driver=D:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
+    "--compile-commands-dir=d:\\Projects\\Esp32\\led_line\\build"
   ],
-  "idf.flashType": "JTAG",
+  "idf.flashType": "UART",
   "files.associations": {
     "*.embeddedhtml": "html",
     "freertos.h": "c",
